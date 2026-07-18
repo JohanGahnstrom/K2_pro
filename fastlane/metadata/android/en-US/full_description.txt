@@ -1,0 +1,7 @@
+OpenFilament CFS is an independent, open-source Android tool for preparing, identifying and managing third-party filament spools used with compatible Creality CFS-equipped printers.
+
+Simple Mode keeps the workflow plug-and-play: choose the filament, colour and spool size. Expert Mode exposes mapping evidence, diagnostics and capability-gated printer integrations.
+
+The application is local-first and does not require an account. MIFARE Classic support depends on the NFC controller in your phone. Printer and firmware compatibility varies.
+
+OpenFilament CFS is not affiliated with or endorsed by Creality.

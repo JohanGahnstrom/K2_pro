@@ -1,6 +1,8 @@
-#!/usr/bin/env bash
-set -euo pipefail
-V=9.3.1
-D="$HOME/.gradle/wrapper/dists/gradle-$V-bin/local/gradle-$V"
-if [ ! -x "$D/bin/gradle" ]; then mkdir -p "$(dirname "$D")"; curl -fL "https://services.gradle.org/distributions/gradle-$V-bin.zip" -o /tmp/gradle.zip; unzip -q /tmp/gradle.zip -d "$(dirname "$D")"; fi
-exec "$D/bin/gradle" "$@"
+#!/bin/sh
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+if [ ! -f "$CLASSPATH" ]; then
+  echo "gradle-wrapper.jar is not bundled. Run 'gradle wrapper --gradle-version 8.13' once, or open the project in Android Studio." >&2
+  exit 1
+fi
+exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"

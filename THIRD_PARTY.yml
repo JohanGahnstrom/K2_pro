@@ -1,0 +1,91 @@
+project: OpenFilament CFS
+baseline_note: >
+  As of 0.2.0, the CFS RFID codec (nfc/CfsCodec.kt) IS ported implementation
+  code, not research-only reference. It reproduces, verbatim, the AES master
+  keys, key-derivation scheme and payload format published by the sources
+  below, translated from Python to Kotlin/JVM crypto APIs. It is verified
+  against the golden vector in those sources' own README (UID 35B94A19 ->
+  Key B 239E7FE23653 -> HyperPLA/01001/0330/000001/black) via an executable
+  test (CfsCodecTest.kt) that must pass before the write path may ship.
+
+sources:
+  - name: flamebarke/creality_rfid
+    url: https://github.com/flamebarke/creality_rfid
+    license: "No explicit LICENSE file in the upstream repository as of this port. Attribution given; confirm licensing terms directly with the author before any public redistribution of nfc/CfsCodec.kt."
+    use: >
+      DIRECT PORT. AES_KEY_GEN and AES_KEY_CIPHER master key constants,
+      the UID-repeated-4x key-derivation scheme, the 48-char ASCII payload
+      layout (batch/date/supplier/material/color/length/serial/reserve),
+      the material-code table (MaterialCodes.kt), and the published golden
+      vector are all taken directly from this repository's crypto.py /
+      creality_rfid.py and README, ported to nfc/CfsCodec.kt and
+      data/MaterialCodes.kt.
+    files: [app/src/main/java/com/openfilament/cfs/nfc/CfsCodec.kt, app/src/main/java/com/openfilament/cfs/data/MaterialCodes.kt, app/src/test/java/com/openfilament/cfs/CfsCodecTest.kt]
+
+  - name: DnG-Crafts K2-RFID
+    url: https://github.com/DnG-Crafts/K2-RFID
+    use: >
+      Canonical upstream research source (flamebarke/creality_rfid is
+      described by its own author as a port of this project). Not directly
+      read in this session; recorded as the origin project per
+      SOURCE_REGISTER.md. Consult before resolving any future
+      DnG-vs-flamebarke discrepancy.
+
+  - name: sybethiesant/CFSWriter
+    url: https://github.com/sybethiesant/CFSWriter
+    use: >
+      Kotlin/Compose reference architecture (same stack as this project).
+      Not directly read/copied in this session — recorded per
+      SOURCE_REGISTER.md as the preferred fork target for OCR label
+      scanning and a larger colour palette in a future iteration.
+
+  - name: HelixScreen K2-series developer docs
+    url: https://helixscreen.org/dev/printers/creality-k2/
+    use: >
+      Source for the `box` Moonraker object schema (per-slot color_value/
+      material_type/remain_len/temperature/state, auto_refill,
+      same_material) and the M8200 load/unload command family used in
+      printer/MoonrakerClient.kt. Confirmed on K2 Plus; K2 Pro is expected
+      but NOT YET bench-verified — see HOLD_REGISTER.md H-004.
+    files: [app/src/main/java/com/openfilament/cfs/printer/MoonrakerClient.kt]
+
+  - name: Creality Wiki — K2 Plus Automatic Refill Guide
+    url: https://wiki.creality.com/en/k2-flagship-series/k2-plus/automatic-refill-guide
+    use: Confirms BOX_ENABLE_AUTO_REFILL as a native firmware feature (§12).
+
+  - name: Android SDK documentation
+    url: https://developer.android.com/reference/android/nfc/tech/MifareClassic
+    use: API design reference; also the source of the "MifareClassic support is optional" caveat driving the H-000 device gate.
+
+  - name: ikarus23/MifareClassicTool
+    url: https://github.com/ikarus23/MifareClassicTool
+    use: Seed data source for nfc/DeviceCompatibility.kt's known compatible/incompatible device lists (COMPATIBLE_DEVICES.md / INCOMPATIBLE_DEVICES.md).
+
+  - name: SpoolmanDB
+    url: https://github.com/Donkie/SpoolmanDB
+    license: MIT
+    use: planned catalogue ingestion; sample records in Catalogue.kt are illustrative.
+
+  - name: Spoolman (Moonraker [spoolman] component)
+    url: https://github.com/Donkie/Spoolman
+    use: Authoritative filament-consumption tracking is delegated here, not reimplemented app-side (§14).
+
+  - name: CFSync
+    url: https://github.com/koen01/CFSync
+    use: planned interoperability reference for CFS↔Spoolman slot sync.
+
+  - name: Mobileraker
+    url: https://github.com/Clon1998/mobileraker
+    use: UX and Moonraker architecture reference only.
+
+  - name: gibz104/SpoolmanSync
+    url: https://github.com/gibz104/SpoolmanSync
+    license: MIT
+    use: >
+      NOT a code dependency of this app — a recommended companion
+      deployment (separate Docker container). Covers CFS slot dashboard,
+      per-print consumption tracking and low-stock alerts, which this app
+      deliberately does not build (see FUNCTIONAL_DESCRIPTION.md §11.1 and
+      HOLD_REGISTER.md H-005/H-007). The app's only obligation toward it is
+      writing the serial-number-as-spool-ID convention into tags at tagging
+      time (already implemented in MainViewModel.writeTag).

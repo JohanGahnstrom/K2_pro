@@ -1,0 +1,2 @@
+-keep class com.openfilament.cfs.domain.** { *; }
+-dontwarn okhttp3.**
