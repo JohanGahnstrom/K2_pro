@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -95,7 +97,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     val (bg, icon) = when (assessment.verdict) {
         DeviceCompatibility.Verdict.SUPPORTED -> MaterialTheme.colorScheme.secondaryContainer to Icons.Default.CheckCircle
         DeviceCompatibility.Verdict.UNSUPPORTED -> MaterialTheme.colorScheme.errorContainer to Icons.Default.ErrorOutline
-        DeviceCompatibility.Verdict.UNKNOWN -> MaterialTheme.colorScheme.surfaceVariant to Icons.Default.HelpOutline
+        DeviceCompatibility.Verdict.UNKNOWN -> MaterialTheme.colorScheme.surfaceVariant to Icons.AutoMirrored.Filled.HelpOutline
     }
     Card(colors = CardDefaults.cardColors(containerColor = bg), shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
@@ -263,7 +265,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("This app deliberately does not build a slot dashboard, consumption tracker or low-stock UI — SpoolmanSync already does this against real K1/K2/K2 Plus/Hi/Ender-3-V3-CFS hardware, is open source, and deploys in one command.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = state.spoolmanSyncUrl, onValueChange = vm::setSpoolmanSyncUrl, modifier = Modifier.fillMaxWidth(), label = { Text("SpoolmanSync URL") }, placeholder = { Text("http://192.168.1.100:3000") }, leadingIcon = { Icon(Icons.Default.Link, null) }, singleLine = true)
-                Button(onClick = { runCatching { uriHandler.openUri(state.spoolmanSyncUrl) } }, enabled = state.spoolmanSyncUrl.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) { Icon(Icons.Default.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Open SpoolmanSync") }
+                Button(onClick = { runCatching { uriHandler.openUri(state.spoolmanSyncUrl) } }, enabled = state.spoolmanSyncUrl.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) { Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Open SpoolmanSync") }
             }
         }
 
