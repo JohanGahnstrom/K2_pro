@@ -76,12 +76,25 @@ object DeviceCompatibility {
      */
     private const val PIXEL_8_MIN_SDK_FOR_SUPPORT = 35 // Android 15
 
+    /**
+     * [model] is deliberately nullable: Android's real "for unit tests" stub
+     * jar returns null for Build.MODEL (a non-issue on an actual device,
+     * which never has a null model string) — a non-null `String` parameter
+     * would make Kotlin emit an Intrinsics.checkNotNullParameter that throws
+     * NPE the moment this is called with defaults under testDebugUnitTest
+     * (confirmed by real CI, not this environment's standalone JVM harness,
+     * which used hand-written stubs that didn't reproduce this). A null/
+     * blank model safely falls through to UNKNOWN below, which is the
+     * correct verdict for "we don't know what this device is" anyway.
+     * manufacturer was accepted but never actually used in this function
+     * and has been dropped rather than given the same treatment for no
+     * purpose.
+     */
     fun assessDeviceModel(
-        model: String = Build.MODEL,
-        manufacturer: String = Build.MANUFACTURER,
+        model: String? = Build.MODEL,
         sdkInt: Int = Build.VERSION.SDK_INT,
     ): Assessment {
-        val normalized = model.uppercase().trim()
+        val normalized = (model ?: "").uppercase().trim()
         val isPixel8 = normalized.contains("PIXEL 8") && !normalized.contains("PIXEL 8A")
         return when {
             isPixel8 && sdkInt >= PIXEL_8_MIN_SDK_FOR_SUPPORT ->

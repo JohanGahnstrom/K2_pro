@@ -67,9 +67,30 @@ delivery environment's pushes:
    wildcard already imported). A second reported error ("cannot infer
    type parameter" on the `AnimatedContent` call using `tab`) was a
    cascading effect of the same root cause, not a separate bug.
-2. Fixed by adding the missing import (commit `7d94069`). A second CI run
-   is in flight as of this note — see the Actions tab for the current
-   result of run 2 and later.
+2. Fixed by adding the missing import (commit `7d94069`).
+3. **Run 3**: `compileDebugKotlin` succeeded — but `testDebugUnitTest`
+   failed 16/25 tests, every one of them in `DeviceCompatibilityTest` and
+   `AppStateWriteGateTest`, all with the same `NullPointerException`.
+   Root cause: Android's real "for unit tests" placeholder jar returns
+   `null` for `Build.MODEL`/`Build.MANUFACTURER` (never happens on an
+   actual device), and `DeviceCompatibility.assessDeviceModel`'s
+   `manufacturer: String = Build.MANUFACTURER` default parameter had a
+   non-null Kotlin type — Kotlin emits an
+   `Intrinsics.checkNotNullParameter` for every non-null parameter
+   regardless of whether the value came from an explicit argument or a
+   default expression, so the null default threw immediately on any call
+   that didn't pass `manufacturer` explicitly (which was every call in
+   the app and every test). This is exactly the kind of bug the
+   standalone JVM harness below could not catch, because its hand-written
+   `Build` stub used placeholder non-null strings instead of reproducing
+   Android's actual null-string behavior in the unit-test jar.
+4. Fixed by dropping the never-actually-used `manufacturer` parameter and
+   making `model` nullable with a safe `?: ""` fallback inside the
+   function (commit pending push). Re-verified with a corrected
+   standalone stub (`Build.MODEL`/`MANUFACTURER` now `null`, matching
+   reality) — confirms the fix and that this stub inaccuracy would have
+   caught the bug from the start had it been used originally.
+5. See the Actions tab for the result of this and any later run.
 
 This is a materially stronger verification signal than the standalone
 JVM harness below: it's the real Android Gradle Plugin, the real
