@@ -7,7 +7,9 @@
 - CFS RFID codec implemented and VERIFIED: **yes** — see below
 - Unit tests created: **yes**
 - GitHub Actions Android build workflow created: **yes**
-- Full Gradle/Android build executed: **no** (environment limitation, see below)
+- Full Gradle/Android build executed: **yes, by CI** — not locally in this
+  delivery environment (network limitation, see below); real results in
+  the "Real Gradle/Android CI results" section
 - APK produced locally: **no**
 - AAB produced locally: **no**
 - Physical NFC test: **no**
@@ -50,7 +52,33 @@ specifically guards the Pixel 8/8 Pro Android-15 version gate and the
 bare-`"PIXEL"`-substring bug a naive matcher would have (silently marking
 every future, unverified Pixel model SUPPORTED).
 
-## Why the full Android build wasn't run
+## Real Gradle/Android CI results (2026-07-18)
+
+Since `.github/workflows/android.yml` triggers on every push, and GitHub's
+own Actions runners are not behind this environment's network
+restrictions, the actual `gradle testDebugUnitTest lintDebug assembleDebug
+bundleRelease` build has genuinely run twice so far, both from this
+delivery environment's pushes:
+
+1. **Run 1** (commit `d82c8aa`, the initial real-source replacement):
+   failed at `compileDebugKotlin` — `OpenFilamentApp.kt` used
+   `rememberSaveable` without importing it (it lives in
+   `androidx.compose.runtime.saveable`, not the `androidx.compose.runtime.*`
+   wildcard already imported). A second reported error ("cannot infer
+   type parameter" on the `AnimatedContent` call using `tab`) was a
+   cascading effect of the same root cause, not a separate bug.
+2. Fixed by adding the missing import (commit `7d94069`). A second CI run
+   is in flight as of this note — see the Actions tab for the current
+   result of run 2 and later.
+
+This is a materially stronger verification signal than the standalone
+JVM harness below: it's the real Android Gradle Plugin, the real
+compileSdk 36 platform, and the real AndroidX/Compose dependency set,
+running unmodified. Treat CI's `compileDebugKotlin`/`assembleDebug`
+result as authoritative over anything claimed by the standalone-compile
+sections below, which only ever covered the non-UI logic files.
+
+## Why the full Android build can't run inside this delivery environment
 
 This environment has Java 21 and a standalone Kotlin compiler (fetched
 from Maven Central, since no `kotlinc` CLI is preinstalled), but no

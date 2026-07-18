@@ -1,9 +1,11 @@
 package com.openfilament.cfs
 
+import android.app.Application
 import android.nfc.Tag
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.openfilament.cfs.data.Catalogue
+import com.openfilament.cfs.data.SettingsStore
 import com.openfilament.cfs.domain.*
 import com.openfilament.cfs.nfc.CfsCodec
 import com.openfilament.cfs.nfc.DeviceCompatibility
@@ -13,6 +15,7 @@ import com.openfilament.cfs.printer.MoonrakerClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -68,21 +71,42 @@ private fun buildDateField(date: Date): String {
     return "$yy$monthChar$dd"
 }
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state.asStateFlow()
     val products = Catalogue.products
     private val moonraker = MoonrakerClient()
     private val nfcTagService = NfcTagService()
+    private val settingsStore = SettingsStore(application)
 
-    fun setMode(mode: UserMode) { _state.value = _state.value.copy(mode = mode) }
+    init {
+        viewModelScope.launch {
+            val persisted = settingsStore.settings.first()
+            _state.value = _state.value.copy(
+                printerUrl = persisted.printerUrl ?: _state.value.printerUrl,
+                spoolmanSyncUrl = persisted.spoolmanSyncUrl ?: _state.value.spoolmanSyncUrl,
+                mode = persisted.mode ?: _state.value.mode,
+            )
+        }
+    }
+
+    fun setMode(mode: UserMode) {
+        _state.value = _state.value.copy(mode = mode)
+        viewModelScope.launch { settingsStore.setMode(mode) }
+    }
     fun selectProduct(product: FilamentProduct) {
         _state.value = _state.value.copy(selectedProduct = product, selectedColor = product.colors.first(), weightG = product.defaultWeightG)
     }
     fun selectColor(color: FilamentColor) { _state.value = _state.value.copy(selectedColor = color) }
     fun setWeight(weight: Int) { _state.value = _state.value.copy(weightG = weight.coerceIn(50, 5000)) }
-    fun setPrinterUrl(url: String) { _state.value = _state.value.copy(printerUrl = url) }
-    fun setSpoolmanSyncUrl(url: String) { _state.value = _state.value.copy(spoolmanSyncUrl = url) }
+    fun setPrinterUrl(url: String) {
+        _state.value = _state.value.copy(printerUrl = url)
+        viewModelScope.launch { settingsStore.setPrinterUrl(url) }
+    }
+    fun setSpoolmanSyncUrl(url: String) {
+        _state.value = _state.value.copy(spoolmanSyncUrl = url)
+        viewModelScope.launch { settingsStore.setSpoolmanSyncUrl(url) }
+    }
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
 
     fun beginTagScan() {
