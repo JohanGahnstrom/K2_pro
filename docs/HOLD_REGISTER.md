@@ -81,9 +81,19 @@ recovery.
 
 ## H-002 — Gradle/Android SDK build verification
 
-**Status:** unchanged — environment limitation, not a design question.
-**Needed to close:** unchanged from prior revision (Android Studio, API 36
-SDK, Gradle wrapper, documented build commands).
+**Status:** CLOSED as of 2026-07-18. `.github/workflows/android.yml` runs
+on every push, on GitHub's own Actions runners (not subject to this
+delivery environment's network restrictions), and has now genuinely
+passed: `testDebugUnitTest`, `lintDebug`, `assembleDebug`, and
+`bundleRelease` all green, with a debug APK and release AAB produced and
+uploaded as CI artifacts. See BUILD_STATUS.md for the full run history,
+including three real bugs this exposed and fixed along the way (a
+missing `rememberSaveable` import, a `NullPointerException` from
+`Build.MODEL`/`MANUFACTURER` being `null` in the real unit-test jar, and
+two deprecated icon references).
+**Needed to close:** nothing further for the build itself — this is
+closed. Installing the resulting APK on physical hardware remains H-000/
+H-004/H-011's job, not this item's.
 
 ## H-003 — Play Store signing and upload
 
