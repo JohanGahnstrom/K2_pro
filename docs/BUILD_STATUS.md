@@ -37,13 +37,33 @@ placeholder — but it has NOT been exercised against Android's actual
 Those remain the genuine open items (see HOLD_REGISTER.md H-004, H-011,
 and FUNCTIONAL_DESCRIPTION.md §20).
 
+`nfc/DeviceCompatibility.kt` (H-000's device-list gate) was verified the
+same way after its 2026-07-18 update: compiled standalone (with small
+local stubs standing in for `android.os.Build`/`android.nfc.Tag`/
+`android.nfc.tech.MifareClassic`, since this file's pure decision logic —
+`assessDeviceModel` — doesn't need real Android behavior to test, only
+the field values it's handed) alongside `domain/Models.kt` and
+`data/MaterialCodes.kt`. All three files plus `nfc/CfsCodec.kt` and their
+test suites (`CfsCodecTest`, `FilamentMathTest`, `DeviceCompatibilityTest`)
+compiled and ran together: **18/18 tests passed.** `DeviceCompatibilityTest`
+specifically guards the Pixel 8/8 Pro Android-15 version gate and the
+bare-`"PIXEL"`-substring bug a naive matcher would have (silently marking
+every future, unverified Pixel model SUPPORTED).
+
 ## Why the full Android build wasn't run
 
-This environment has Java 21 and (as of this revision) a standalone Kotlin
-compiler, but no Android SDK, no Gradle installation, and no Gradle wrapper
-JAR, and no way to install the Android SDK/build-tools/emulator stack
-within this session. This is an environment limitation, not evidence that
-the source fails to compile as an Android project — the CI workflow
+This environment has Java 21 and a standalone Kotlin compiler (fetched
+from Maven Central, since no `kotlinc` CLI is preinstalled), but no
+Android SDK. This isn't a missing-package problem: Android's SDK
+platform/build-tools and the Android Gradle Plugin/AndroidX/Compose
+artifacts are only ever served from `dl.google.com` (`maven.google.com`
+is not an independent mirror — every real artifact path there 301s back
+to `dl.google.com`), and this environment's network policy blocks that
+host outright (confirmed directly: manifest requests to `ghcr.io` for a
+Docker-based Android SDK image succeed, but the actual image layers,
+hosted on `pkg-containers.githubusercontent.com`, are blocked the same
+way). This is an environment limitation, not evidence that the source
+fails to compile as an Android project — the CI workflow
 (`.github/workflows/android.yml`) is the first authoritative full-project
 compile check.
 

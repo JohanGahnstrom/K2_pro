@@ -22,13 +22,30 @@ hardware. iOS is out of scope entirely (Apple restricts this at the OS
 level).
 **Needed to close:**
 
-- a maintained allow/deny device list, seeded from community-maintained
-  MIFARE Classic Tool compatibility data and this project's own bench
-  results;
+- ~~a maintained allow/deny device list, seeded from community-maintained
+  MIFARE Classic Tool compatibility data~~ — **done 2026-07-18:**
+  `nfc/DeviceCompatibility.kt` now sources its `KNOWN_COMPATIBLE`/
+  `KNOWN_INCOMPATIBLE` sets directly from ikarus23/MifareClassicTool's
+  `COMPATIBLE_DEVICES.md`/`INCOMPATIBLE_DEVICES.md`, restricted to entries
+  where `Build.MODEL` reliably contains the matched string (Pixel devices,
+  plus the CFSWriter-confirmed Galaxy S25/S26 model codes) — most of the
+  community lists use marketing names that don't appear in `Build.MODEL`
+  on non-Pixel hardware, so those are kept verbatim in
+  `COMMUNITY_REPORTED_*_MARKETING_NAMES` for manual reference rather than
+  wired into the automated check, to avoid a false SUPPORTED verdict. This
+  pass also fixed a real error: Pixel 8/8 Pro was hard-coded UNSUPPORTED
+  from an anecdotal XDA report, but the authoritative list shows Google
+  fixed it in Android 15+ — the code now gates on `Build.VERSION.SDK_INT`
+  instead of blanket-refusing those two models. Covered by
+  `DeviceCompatibilityTest` (9 tests, standalone-verified per
+  BUILD_STATUS.md);
 - a `getTechList()`-based capability check that runs before any write
-  attempt, not mid-transaction;
+  attempt, not mid-transaction — **already implemented** (`assessTag`);
+- device-code translation for the remaining marketing-name-only community
+  entries (Samsung/Xiaomi/etc. report model codes, not marketing names, in
+  `Build.MODEL`) — open;
 - bench confirmation on at least two real device models spanning different
-  NFC controller vendors.
+  NFC controller vendors — open, needs physical hardware.
 
 **User impact:** on unsupported hardware, the app must refuse the write flow
 immediately with a specific, honest message, rather than attempting and
