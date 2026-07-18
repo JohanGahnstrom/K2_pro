@@ -35,7 +35,14 @@ class MainActivity : ComponentActivity() {
             PendingIntent.FLAG_MUTABLE
         } else 0
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, pendingIntentFlags)
-        val filters = arrayOf(IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED))
+        // ACTION_TAG_DISCOVERED is a required fallback, not an alternative: Android only
+        // delivers ACTION_TECH_DISCOVERED when MifareClassic is in the tag's techList, so a
+        // non-MIFARE tag (or a MIFARE-incapable phone/tag combo) would otherwise produce no
+        // callback at all — silence, not the "clear, specific message" FUNCTIONAL_DESCRIPTION.md
+        // §8.5 requires. DeviceCompatibility.assessTag() (called from NfcTagService.probe) does
+        // its own techList inspection once ANY tag reaches onTagDiscovered, so it can produce
+        // that message for every tag, not just ones already known to be MifareClassic-capable.
+        val filters = arrayOf(IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED), IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED))
         val techLists = arrayOf(arrayOf(MifareClassic::class.java.name))
         adapter.enableForegroundDispatch(this, pendingIntent, filters, techLists)
     }
@@ -51,7 +58,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNfcIntent(intent: Intent?) {
-        if (intent?.action != NfcAdapter.ACTION_TECH_DISCOVERED) return
+        if (intent?.action != NfcAdapter.ACTION_TECH_DISCOVERED && intent?.action != NfcAdapter.ACTION_TAG_DISCOVERED) return
         val tag: Tag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
         } else {

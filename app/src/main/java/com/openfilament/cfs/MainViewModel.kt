@@ -34,9 +34,22 @@ data class AppState(
 ) {
     val draft get() = SpoolDraft(selectedProduct, selectedColor, weightG)
 
-    /** Writing is only offered once the device gate has passed on a real scan —
-     * never enabled purely from the static per-model assessment. */
-    val writeReady: Boolean get() = lastTagAssessment?.verdict == DeviceCompatibility.Verdict.SUPPORTED
+    /**
+     * FUNCTIONAL_DESCRIPTION.md §6/§18: "Simple Mode may not silently use
+     * Experimental or Unsupported mappings." Null means the current
+     * selection is allowed to write for the current mode; non-null is a
+     * user-facing reason it's blocked. Checked both proactively (to disable
+     * the write button before a wasted tag scan) and again right before the
+     * actual write, since mode/selection could change between the two.
+     * Unsupported is blocked in both modes; Experimental only in Simple.
+     */
+    val writeBlockedReason: String? get() = when {
+        selectedProduct.confidence == MappingConfidence.UNSUPPORTED ->
+            "${selectedProduct.brand} ${selectedProduct.line} has no safe Creality material-code mapping yet. Writing is blocked."
+        mode == UserMode.SIMPLE && selectedProduct.confidence == MappingConfidence.EXPERIMENTAL ->
+            "${selectedProduct.brand} ${selectedProduct.line}'s material-code mapping is Experimental. Switch to Expert Mode to write it anyway."
+        else -> null
+    }
 }
 
 /**
@@ -73,15 +86,31 @@ class MainViewModel : ViewModel() {
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
 
     fun beginTagScan() {
-        _state.value = _state.value.copy(awaitingTagScan = true, message = "Hold the tag against your phone…")
+        val blockedReason = _state.value.writeBlockedReason
+        _state.value = if (blockedReason != null) {
+            _state.value.copy(message = blockedReason)
+        } else {
+            _state.value.copy(awaitingTagScan = true, message = "Hold the tag against your phone…")
+        }
     }
 
     fun cancelTagScan() {
         _state.value = _state.value.copy(awaitingTagScan = false)
     }
 
-    /** Called from MainActivity.onNewIntent when an NFC tag is discovered. */
+    /**
+     * Called from MainActivity.onNewIntent whenever the Android NFC dispatch
+     * hands over ANY discovered tag — the foreground dispatch is active
+     * app-wide (MainActivity.onResume), not just while the Tag screen is
+     * open. Without the [AppState.awaitingTagScan] guard below, brushing the
+     * phone against an unrelated MIFARE Classic tag on the Home, Spools,
+     * Printer, or Settings screen would silently write whatever product/
+     * colour/weight happens to be selected — never something the user asked
+     * for. Only proceed with a write when the user explicitly started a scan
+     * from the Tag screen (vm.beginTagScan()).
+     */
     fun onTagDiscovered(tag: Tag) = viewModelScope.launch {
+        if (!_state.value.awaitingTagScan) return@launch
         val probe = nfcTagService.probe(tag)
         _state.value = _state.value.copy(
             lastTagAssessment = probe.compatibility,
@@ -89,9 +118,14 @@ class MainViewModel : ViewModel() {
             awaitingTagScan = false,
             message = probe.compatibility.message
         )
-        if (probe.compatibility.verdict == DeviceCompatibility.Verdict.SUPPORTED) {
-            writeTag(tag, probe.securityState == TagSecurityState.CFS_SECURED)
+        if (probe.compatibility.verdict != DeviceCompatibility.Verdict.SUPPORTED) return@launch
+
+        val blockedReason = _state.value.writeBlockedReason
+        if (blockedReason != null) {
+            _state.value = _state.value.copy(message = blockedReason)
+            return@launch
         }
+        writeTag(tag, probe.securityState == TagSecurityState.CFS_SECURED)
     }
 
     private fun writeTag(tag: Tag, tagIsAlreadySecured: Boolean) = viewModelScope.launch {

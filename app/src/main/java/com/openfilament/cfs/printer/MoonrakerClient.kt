@@ -34,7 +34,7 @@ class MoonrakerClient(
         runCatching {
             val clean = baseUrl.trimEnd('/')
             val request = Request.Builder()
-                .url("$clean/printer/objects/query?print_stats&extruder&heater_bed&box")
+                .url("$clean/printer/objects/query?print_stats&extruder&heater_bed&display_status&box")
                 .get().build()
             client.newCall(request).execute().use { response ->
                 require(response.isSuccessful) { "Moonraker returned HTTP ${response.code}" }
@@ -43,12 +43,14 @@ class MoonrakerClient(
                 val stats = status.optJSONObject("print_stats") ?: JSONObject()
                 val extruder = status.optJSONObject("extruder") ?: JSONObject()
                 val bed = status.optJSONObject("heater_bed") ?: JSONObject()
+                val displayStatus = status.optJSONObject("display_status") ?: JSONObject()
                 val box = status.optJSONObject("box")
                 PrinterSnapshot(
                     online = true,
                     hostname = clean,
                     state = stats.optString("state", "Ready").replaceFirstChar { it.uppercase() },
-                    progress = 0,
+                    // display_status.progress is a 0.0-1.0 fraction per Moonraker's documented API.
+                    progress = (displayStatus.optDouble("progress", 0.0) * 100).toInt().coerceIn(0, 100),
                     nozzleC = extruder.optDouble("temperature").takeUnless { it.isNaN() },
                     bedC = bed.optDouble("temperature").takeUnless { it.isNaN() },
                     autoRefillEnabled = box?.optBoolean("auto_refill", false) ?: false,

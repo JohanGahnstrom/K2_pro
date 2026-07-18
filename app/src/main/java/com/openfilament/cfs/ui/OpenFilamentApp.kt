@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -151,8 +152,15 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
         }
         OutlinedButton(onClick = vm::cancelTagScan, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
     } else {
-        Button(onClick = vm::beginTagScan, modifier = Modifier.fillMaxWidth().height(60.dp)) { Icon(Icons.Default.Nfc, null); Spacer(Modifier.width(10.dp)); Text("Tap a tag to write") }
-        Text("The write path uses a codec verified against a published golden vector (FUNCTIONAL_DESCRIPTION.md §8.4). Whether your specific phone's NFC hardware can perform the write is confirmed only once a tag is scanned — see the compatibility banner on Home.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val blockedReason = state.writeBlockedReason
+        Button(onClick = vm::beginTagScan, enabled = blockedReason == null, modifier = Modifier.fillMaxWidth().height(60.dp)) { Icon(Icons.Default.Nfc, null); Spacer(Modifier.width(10.dp)); Text("Tap a tag to write") }
+        if (blockedReason != null) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), shape = RoundedCornerShape(22.dp)) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) { Icon(Icons.Default.ErrorOutline, null); Spacer(Modifier.width(12.dp)); Text(blockedReason) }
+            }
+        } else {
+            Text("The write path uses a codec verified against a published golden vector (FUNCTIONAL_DESCRIPTION.md §8.4). Whether your specific phone's NFC hardware can perform the write is confirmed only once a tag is scanned — see the compatibility banner on Home.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 
     state.lastWriteOutcome?.let { outcome ->
@@ -234,6 +242,12 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(12.dp).clip(CircleShape).background(if (state.printer.online) Color(0xFF36D67C) else Color(0xFFFF6B68))); Spacer(Modifier.width(10.dp)); Text(state.printer.state, fontWeight = FontWeight.Black, fontSize = 20.sp) }
                 Text(state.printer.hostname, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.printer.state.equals("Printing", ignoreCase = true)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(progress = { state.printer.progress / 100f }, modifier = Modifier.fillMaxWidth())
+                        Text("${state.printer.progress}% complete", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { TempTile("Nozzle", state.printer.nozzleC); TempTile("Bed", state.printer.bedC); TempTile("Chamber", state.printer.chamberC) }
             }
         }
