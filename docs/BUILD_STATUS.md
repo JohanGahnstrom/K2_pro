@@ -10,8 +10,8 @@
 - Full Gradle/Android build executed: **yes, by CI** — not locally in this
   delivery environment (network limitation, see below); real results in
   the "Real Gradle/Android CI results" section
-- APK produced locally: **no**
-- AAB produced locally: **no**
+- APK produced locally: **no** — produced by CI, see below
+- AAB produced locally: **no** — produced by CI, see below
 - Physical NFC test: **no**
 - K2 Pro/CFS test: **no**
 
@@ -86,11 +86,22 @@ delivery environment's pushes:
    Android's actual null-string behavior in the unit-test jar.
 4. Fixed by dropping the never-actually-used `manufacturer` parameter and
    making `model` nullable with a safe `?: ""` fallback inside the
-   function (commit pending push). Re-verified with a corrected
-   standalone stub (`Build.MODEL`/`MANUFACTURER` now `null`, matching
-   reality) — confirms the fix and that this stub inaccuracy would have
-   caught the bug from the start had it been used originally.
-5. See the Actions tab for the result of this and any later run.
+   function (commit `24a67bf`). Re-verified with a corrected standalone
+   stub (`Build.MODEL`/`MANUFACTURER` now `null`, matching reality) —
+   confirms the fix and that this stub inaccuracy would have caught the
+   bug from the start had it been used originally.
+5. **Run 5 (commit `24a67bf`): GREEN.** `testDebugUnitTest`,
+   `lintDebug`, `assembleDebug`, and `bundleRelease` all passed for
+   real, and a debug APK + release AAB were produced and uploaded as
+   CI artifacts (`OpenFilamentCFS-builds`). This is the first genuinely
+   successful end-to-end build of this project — real Android Gradle
+   Plugin, real compileSdk 36 platform, real AndroidX/Compose
+   dependencies, on GitHub's own infrastructure, unmodified by anything
+   specific to this delivery environment. Subsequent commits (the
+   AutoMirrored icon cleanup, the serial-stability fix, and the local
+   spool history feature) each triggered their own run — see the
+   Actions tab for their current results; update this section if any
+   of them regress.
 
 This is a materially stronger verification signal than the standalone
 JVM harness below: it's the real Android Gradle Plugin, the real
