@@ -231,7 +231,28 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
 
 @Composable private fun SpoolsScreen(state: AppState) = Screen {
     Header("Local inventory", "My spools", "Spool identity, remaining material and tag history stay local by default.")
-    EmptyState(Icons.Default.Inventory2, "No tagged spools yet", "Complete a verified tag write and the spool will appear here.")
+    if (state.spools.isEmpty()) {
+        EmptyState(Icons.Default.Inventory2, "No tagged spools yet", "Complete a verified tag write and the spool will appear here.")
+    } else {
+        state.spools.asReversed().forEach { spool -> TaggedSpoolCard(spool) }
+    }
+}
+
+@Composable private fun TaggedSpoolCard(spool: TaggedSpool) {
+    val formatted = remember(spool.taggedAt) {
+        java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(spool.taggedAt)
+    }
+    Card(shape = RoundedCornerShape(24.dp)) {
+        Row(Modifier.padding(18.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(runCatching { Color(AndroidColor.parseColor(spool.color.hex)) }.getOrDefault(Color.Gray)))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("${spool.product.brand} ${spool.product.line}", fontWeight = FontWeight.Black)
+                Text("${spool.color.name} · ${spool.weightG} g · serial ${spool.serial}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text("Tagged $formatted", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+        }
+    }
 }
 
 @Composable private fun PrinterScreen(state: AppState, vm: MainViewModel) {

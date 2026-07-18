@@ -32,12 +32,18 @@ data class FilamentColor(val name: String, val hex: String) {
     val tagColorField: String get() = "0" + hex.removePrefix("#").uppercase().padStart(6, '0')
 }
 
+/** Generates a fresh random spool serial. Called once per distinct spool
+ * identity (see MainViewModel.currentSerial) — NOT suitable as a default
+ * argument value read repeatedly from a `get()` computed property, since
+ * each evaluation of a default expression produces a different value. */
+fun generateSpoolSerial(): String = UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
+
 data class SpoolDraft(
     val product: FilamentProduct,
     val color: FilamentColor,
     val weightG: Int,
+    val serial: String,
     val remainingG: Int = weightG,
-    val serial: String = UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
 ) {
     /** Nominal STARTING quantity only — never treat as live remaining material.
      * Live remaining quantity should come from box.remain_len or Moonraker's
@@ -47,6 +53,22 @@ data class SpoolDraft(
     /** Best-effort length-code for the tag payload; only 1000g/500g are bench-verified (MaterialCodes). */
     val tagLengthField: String get() = MaterialCodes.inferredLengthCode(weightG)
 }
+
+/**
+ * A local record of a spool this app has actually written a tag for —
+ * FUNCTIONAL_DESCRIPTION.md §3.1/§4's "local spool list." In-memory only
+ * for now (resets when the process is killed, not just on a normal
+ * restart-with-persisted-settings) — full cross-restart persistence is a
+ * reasonable next step (Room, or a JSON-encoded DataStore entry) once
+ * there's more than one field's worth of structured data to persist.
+ */
+data class TaggedSpool(
+    val product: FilamentProduct,
+    val color: FilamentColor,
+    val weightG: Int,
+    val serial: String,
+    val taggedAt: java.util.Date,
+)
 
 /** Per-CFS-unit slot state, mirrored from the community-documented Moonraker
  * `box` object schema (FUNCTIONAL_DESCRIPTION.md §11). Confirmed on K2 Plus;
