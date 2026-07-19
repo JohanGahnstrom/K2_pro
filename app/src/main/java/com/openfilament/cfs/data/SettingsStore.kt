@@ -1,6 +1,7 @@
 package com.openfilament.cfs.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,6 +30,7 @@ class SettingsStore(private val context: Context) {
         val SPOOLMAN_SYNC_URL = stringPreferencesKey("spoolman_sync_url")
         val MODE = stringPreferencesKey("mode")
         val SPOOLS_JSON = stringPreferencesKey("tagged_spools_json")
+        val GUIDE_NUDGE_DISMISSED = booleanPreferencesKey("guide_nudge_dismissed")
     }
 
     data class Persisted(
@@ -36,6 +38,7 @@ class SettingsStore(private val context: Context) {
         val spoolmanSyncUrl: String?,
         val mode: UserMode?,
         val spools: List<TaggedSpool>,
+        val guideNudgeDismissed: Boolean,
     )
 
     val settings: Flow<Persisted> = context.settingsDataStore.data.map { prefs ->
@@ -44,6 +47,7 @@ class SettingsStore(private val context: Context) {
             spoolmanSyncUrl = prefs[Keys.SPOOLMAN_SYNC_URL],
             mode = prefs[Keys.MODE]?.let { name -> runCatching { UserMode.valueOf(name) }.getOrNull() },
             spools = prefs[Keys.SPOOLS_JSON]?.let { decodeSpools(it) } ?: emptyList(),
+            guideNudgeDismissed = prefs[Keys.GUIDE_NUDGE_DISMISSED] ?: false,
         )
     }
 
@@ -61,6 +65,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSpools(spools: List<TaggedSpool>) {
         context.settingsDataStore.edit { it[Keys.SPOOLS_JSON] = encodeSpools(spools) }
+    }
+
+    suspend fun setGuideNudgeDismissed() {
+        context.settingsDataStore.edit { it[Keys.GUIDE_NUDGE_DISMISSED] = true }
     }
 }
 

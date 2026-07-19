@@ -12,6 +12,8 @@ import com.openfilament.cfs.nfc.DeviceCompatibility
 import com.openfilament.cfs.nfc.NfcTagService
 import com.openfilament.cfs.nfc.WriteOutcome
 import com.openfilament.cfs.printer.MoonrakerClient
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +38,7 @@ data class AppState(
     val lastWriteOutcome: WriteOutcome? = null,
     val spools: List<TaggedSpool> = emptyList(),
     val message: String? = null,
+    val guideNudgeDismissed: Boolean = false,
     /**
      * Generated once per distinct spool identity (regenerated only when
      * product/colour/weight changes — see MainViewModel.selectProduct/
@@ -91,6 +94,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val moonraker = MoonrakerClient()
     private val nfcTagService = NfcTagService()
     private val settingsStore = SettingsStore(application)
+    private var tagScanTimeoutJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -100,8 +104,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 spoolmanSyncUrl = persisted.spoolmanSyncUrl ?: _state.value.spoolmanSyncUrl,
                 mode = persisted.mode ?: _state.value.mode,
                 spools = persisted.spools,
+                guideNudgeDismissed = persisted.guideNudgeDismissed,
             )
         }
+    }
+
+    fun dismissGuideNudge() {
+        _state.value = _state.value.copy(guideNudgeDismissed = true)
+        viewModelScope.launch { settingsStore.setGuideNudgeDismissed() }
+    }
+
+    fun removeSpool(spool: TaggedSpool) {
+        val newSpools = _state.value.spools - spool
+        _state.value = _state.value.copy(spools = newSpools)
+        viewModelScope.launch { settingsStore.setSpools(newSpools) }
     }
 
     fun setMode(mode: UserMode) {
@@ -125,14 +141,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun beginTagScan() {
         val blockedReason = _state.value.writeBlockedReason
-        _state.value = if (blockedReason != null) {
-            _state.value.copy(message = blockedReason)
-        } else {
-            _state.value.copy(awaitingTagScan = true, message = "Hold the tag against your phone…")
+        if (blockedReason != null) {
+            _state.value = _state.value.copy(message = blockedReason)
+            return
+        }
+        _state.value = _state.value.copy(awaitingTagScan = true, message = "Hold the tag against your phone…")
+        // Without this, walking away mid-scan (or a tag that never reads)
+        // leaves awaitingTagScan stuck true indefinitely — the only way out
+        // is remembering to tap Cancel. Auto-cancel after a while instead,
+        // with a message that explains why, rather than silently timing out.
+        tagScanTimeoutJob?.cancel()
+        tagScanTimeoutJob = viewModelScope.launch {
+            delay(45_000)
+            if (_state.value.awaitingTagScan) {
+                _state.value = _state.value.copy(
+                    awaitingTagScan = false,
+                    message = "No tag detected after 45s — tap \"Tap a tag to write\" again when you're ready."
+                )
+            }
         }
     }
 
     fun cancelTagScan() {
+        tagScanTimeoutJob?.cancel()
         _state.value = _state.value.copy(awaitingTagScan = false)
     }
 
@@ -149,6 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun onTagDiscovered(tag: Tag) = viewModelScope.launch {
         if (!_state.value.awaitingTagScan) return@launch
+        tagScanTimeoutJob?.cancel()
         val probe = nfcTagService.probe(tag)
         _state.value = _state.value.copy(
             lastTagAssessment = probe.compatibility,

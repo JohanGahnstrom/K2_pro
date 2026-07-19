@@ -77,9 +77,9 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     ) { padding ->
         AnimatedContent(tab, label = "tab") { selected ->
             when (selected) {
-                Tab.HOME -> HomeScreen(state, { tab = Tab.TAG }, { tab = Tab.PRINTER }, { showGuideHub = true })
+                Tab.HOME -> HomeScreen(state, { tab = Tab.TAG }, { tab = Tab.PRINTER }, { showGuideHub = true }, viewModel::dismissGuideNudge)
                 Tab.TAG -> TagScreen(state, viewModel, { guideTopic = GuideTopic.SCAN_WRITE })
-                Tab.SPOOLS -> SpoolsScreen(state)
+                Tab.SPOOLS -> SpoolsScreen(state, viewModel)
                 Tab.PRINTER -> PrinterScreen(state, viewModel)
                 Tab.SETTINGS -> SettingsScreen(state, onSimple = { viewModel.setMode(UserMode.SIMPLE) }, onExpert = { showExpertDialog = true })
             }
@@ -135,9 +135,21 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     }
 }
 
-@Composable private fun HomeScreen(state: AppState, tag: () -> Unit, printer: () -> Unit, guide: () -> Unit) = Screen {
+@Composable private fun HomeScreen(state: AppState, tag: () -> Unit, printer: () -> Unit, guide: () -> Unit, dismissNudge: () -> Unit) = Screen {
     Header(if (state.mode == UserMode.SIMPLE) "Simple mode" else "Expert mode", "Filament, finally effortless.", "Identify, tag and manage third-party filament without touching raw RFID data.")
     DeviceCompatBanner(state.deviceAssessment)
+    if (!state.guideNudgeDismissed) {
+        Card(onClick = guide, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(22.dp)) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.HelpOutline, null); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("New here?", fontWeight = FontWeight.Black)
+                    Text("Start with the guides — scanning, writing, and physically applying a tag to a spool.")
+                }
+                IconButton(onClick = dismissNudge) { Icon(Icons.Default.Close, contentDescription = "Dismiss") }
+            }
+        }
+    }
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))).padding(24.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,16 +272,28 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     }
 }
 
-@Composable private fun SpoolsScreen(state: AppState) = Screen {
+@Composable private fun SpoolsScreen(state: AppState, vm: MainViewModel) = Screen {
+    var pendingDelete by remember { mutableStateOf<TaggedSpool?>(null) }
     Header("Local inventory", "My spools", "Spool identity, remaining material and tag history stay local by default.")
     if (state.spools.isEmpty()) {
         EmptyState(Icons.Default.Inventory2, "No tagged spools yet", "Complete a verified tag write and the spool will appear here.")
     } else {
-        state.spools.asReversed().forEach { spool -> TaggedSpoolCard(spool) }
+        state.spools.asReversed().forEach { spool -> TaggedSpoolCard(spool, onDelete = { pendingDelete = spool }) }
+    }
+
+    pendingDelete?.let { spool ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            icon = { Icon(Icons.Default.Delete, null) },
+            title = { Text("Remove this spool?") },
+            text = { Text("This only removes it from this app's local history — it does not affect any physical tag already written for \"${spool.product.brand} ${spool.product.line}\" (serial ${spool.serial}).") },
+            confirmButton = { Button(onClick = { vm.removeSpool(spool); pendingDelete = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } }
+        )
     }
 }
 
-@Composable private fun TaggedSpoolCard(spool: TaggedSpool) {
+@Composable private fun TaggedSpoolCard(spool: TaggedSpool, onDelete: () -> Unit) {
     val formatted = remember(spool.taggedAt) {
         java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(spool.taggedAt)
     }
@@ -282,6 +306,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
                 Text("${spool.color.name} · ${spool.weightG} g · serial ${spool.serial}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 Text("Tagged $formatted", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Remove from history") }
         }
     }
 }
