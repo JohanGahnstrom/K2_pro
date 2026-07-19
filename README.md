@@ -3,6 +3,26 @@
 A native Android, local-first, open-source filament tagging and CFS
 management app for Creality K2 Pro + CFS. Version 0.2.0-alpha01.
 
+## Repository layout
+
+This repo holds the Android app at its root, plus the recommended
+companion deployment as a git submodule:
+
+- `/` — OpenFilamentCFS, the Android app (this README).
+- `/spoolmansync` — [gibz104/SpoolmanSync](https://github.com/gibz104/SpoolmanSync)
+  (MIT), pinned to the `direct-mode` branch. A separate Next.js/Docker
+  service, not linked into or built as part of the Android app — see
+  `docs/FUNCTIONAL_DESCRIPTION.md` §11.1 for why slot dashboard/
+  consumption/low-stock tracking live there instead of in the app.
+  Vendored here for convenience so both projects travel together; clone
+  with submodules to get it:
+
+  ```bash
+  git clone --recurse-submodules <this-repo-url>
+  # or, if already cloned:
+  git submodule update --init --recursive
+  ```
+
 ## What changed from 0.1.0
 
 The CFS RFID codec is no longer an open research problem. `nfc/CfsCodec.kt`

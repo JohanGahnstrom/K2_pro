@@ -1,0 +1,4 @@
+[submodule "spoolmansync"]
+	path = spoolmansync
+	url = https://github.com/gibz104/SpoolmanSync.git
+	branch = direct-mode

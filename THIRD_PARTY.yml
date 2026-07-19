@@ -81,11 +81,22 @@ sources:
   - name: gibz104/SpoolmanSync
     url: https://github.com/gibz104/SpoolmanSync
     license: MIT
+    commit: ddc9daa6aaefb0ae459db80bfff5e5e1f78c46ca (branch direct-mode, on top of
+      upstream ba4a84eb471a650d880c318ec7d1272888efc286)
     use: >
-      NOT a code dependency of this app — a recommended companion
-      deployment (separate Docker container). Covers CFS slot dashboard,
-      per-print consumption tracking and low-stock alerts, which this app
-      deliberately does not build (see FUNCTIONAL_DESCRIPTION.md §11.1 and
-      HOLD_REGISTER.md H-005/H-007). The app's only obligation toward it is
-      writing the serial-number-as-spool-ID convention into tags at tagging
-      time (already implemented in MainViewModel.writeTag).
+      NOT a code dependency of the OpenFilamentCFS Android app — vendored
+      as a git submodule at /spoolmansync (as of 2026-07-19) so the
+      companion Docker service ships from the same repo, but it remains an
+      architecturally separate deployment (own Docker container, own
+      Next.js/Node stack), not linked into or built as part of the Android
+      app. Covers CFS slot dashboard, per-print consumption tracking and
+      low-stock alerts, which the app deliberately does not build (see
+      FUNCTIONAL_DESCRIPTION.md §11.1 and HOLD_REGISTER.md H-005/H-007).
+      The submodule is on the `direct-mode` branch, one commit ahead of
+      upstream `main` (adds direct-Moonraker mode, no Home Assistant
+      required — see spoolmansync/DIRECT_MODE.md); that commit has been
+      regression-tested (npm install/prisma generate/tsc/build/vitest,
+      65/65 tests) but never run against a real printer. The Android
+      app's only obligation toward it is writing the serial-number-as-
+      spool-ID convention into tags at tagging time (already implemented
+      in MainViewModel.writeTag).
