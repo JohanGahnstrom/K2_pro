@@ -44,6 +44,25 @@ Version: 0.2.0 — revised alongside FUNCTIONAL_DESCRIPTION.md 0.2.0.
 - **CrealityOfficial/K2_Series_Klipper (new — official but incomplete Klipper fork with CFS/RFID binary blobs):** referenced via Creality's own GitHub org
 - **Guilouz/Creality-K2Plus-Extracted-Firmwares (new — extracted stock firmware images, useful for confirming object names/behaviour without live hardware):** referenced via GitHub
 
+## Payload field research (2026-07-19)
+
+- **batch/supplier field semantics** — MainViewModel.writeTag hardcodes
+  `batch = "1A5"` and `supplier = "1B3D"` (the golden vector's own literal
+  values) for every write, which reads as a placeholder worth questioning.
+  Checked flamebarke/creality_rfid's README
+  (https://raw.githubusercontent.com/flamebarke/creality_rfid/main/README.md)
+  directly: its documented `pm3write` CLI only exposes `--material --color
+  --length` (batch/date/supplier are not CLI-configurable in the shown
+  usage), and its write example's logged output still shows the exact same
+  Batch/Supplier as the golden vector. That's suggestive that this app's
+  current behaviour matches the reference tool's own demonstrated usage,
+  not proof — the actual `.py` source could not be located (no directory
+  listing available over any host this session could reach: github.com and
+  api.github.com are blocked by this delivery environment's network
+  policy, and targeted path guesses on raw.githubusercontent.com for the
+  source file all 404'd). Treat as inferred, not bench-confirmed, same as
+  the ECB/CBC and blank-tag-trailer open items.
+
 ## Printer-side automation and integration (new section)
 
 - **3dg1luk43/ha_creality_ws (new — Home Assistant WebSocket integration; K2/K2 Pro camera via go2rtc, box temp control, power; open feature-request issue for CFS status, #50):** https://github.com/3dg1luk43/ha_creality_ws , README: https://github.com/3dg1luk43/ha_creality_ws/blob/main/README.md , issue: https://github.com/3dg1luk43/ha_creality_ws/issues/50

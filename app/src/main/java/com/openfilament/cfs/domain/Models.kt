@@ -56,11 +56,12 @@ data class SpoolDraft(
 
 /**
  * A local record of a spool this app has actually written a tag for —
- * FUNCTIONAL_DESCRIPTION.md §3.1/§4's "local spool list." In-memory only
- * for now (resets when the process is killed, not just on a normal
- * restart-with-persisted-settings) — full cross-restart persistence is a
- * reasonable next step (Room, or a JSON-encoded DataStore entry) once
- * there's more than one field's worth of structured data to persist.
+ * FUNCTIONAL_DESCRIPTION.md §3.1/§4's "local spool list." Persisted across
+ * restarts (data/SettingsStore.setSpools/decodeSpools) as JSON referencing
+ * just the product id/colour name, not the full FilamentProduct/
+ * FilamentColor structure — Catalogue.products remains the single source
+ * of truth for product data. A Room-backed store would be the natural next
+ * step if this ever needs querying beyond "the whole list."
  */
 data class TaggedSpool(
     val product: FilamentProduct,

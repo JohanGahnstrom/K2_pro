@@ -98,6 +98,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 printerUrl = persisted.printerUrl ?: _state.value.printerUrl,
                 spoolmanSyncUrl = persisted.spoolmanSyncUrl ?: _state.value.spoolmanSyncUrl,
                 mode = persisted.mode ?: _state.value.mode,
+                spools = persisted.spools,
             )
         }
     }
@@ -168,6 +169,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val s = _state.value
         val draft = s.draft
         val payload = CfsCodec.Payload(
+            // batch/supplier are fixed to the published golden-vector literal values, not
+            // generated per write. This looked like a placeholder worth questioning, so it was
+            // researched (see SOURCE_REGISTER.md "batch/supplier field research", 2026-07-19):
+            // flamebarke/creality_rfid's own README demonstrates `pm3write --material --color
+            // --length` (batch/date/supplier are NOT exposed as CLI args) and its write example's
+            // logged output still shows the exact same Batch/Supplier as the golden vector — i.e.
+            // the reference tool's own demonstrated usage doesn't vary these fields either. That's
+            // suggestive, not proof (the actual .py source wasn't reachable to confirm — no
+            // directory listing available over this session's permitted hosts), so still treat
+            // this as inferred, not bench-confirmed, like the rest of the payload's open items.
             batch = "1A5",
             date = buildDateField(Date()),
             supplier = "1B3D",
@@ -177,17 +188,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             serial = draft.serial.take(6).padEnd(6, '0')
         )
         val outcome = nfcTagService.writeVerified(tag, payload, tagIsAlreadySecured)
+        val newSpools = if (outcome is WriteOutcome.Success) {
+            _state.value.spools + TaggedSpool(s.selectedProduct, s.selectedColor, s.weightG, draft.serial, Date())
+        } else _state.value.spools
         _state.value = _state.value.copy(
             lastWriteOutcome = outcome,
-            spools = if (outcome is WriteOutcome.Success) {
-                _state.value.spools + TaggedSpool(s.selectedProduct, s.selectedColor, s.weightG, draft.serial, Date())
-            } else _state.value.spools,
+            spools = newSpools,
             message = when (outcome) {
                 is WriteOutcome.Success -> "Tag written and verified."
                 is WriteOutcome.DeviceUnsupported -> outcome.reason
                 is WriteOutcome.Failed -> "Write failed: ${outcome.reason}"
             }
         )
+        if (outcome is WriteOutcome.Success) settingsStore.setSpools(newSpools)
     }
 
     fun probePrinter() = viewModelScope.launch {
