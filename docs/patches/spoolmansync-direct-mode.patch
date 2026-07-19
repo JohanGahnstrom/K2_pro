@@ -1,0 +1,1121 @@
+From ddc9daa6aaefb0ae459db80bfff5e5e1f78c46ca Mon Sep 17 00:00:00 2001
+From: "Johan (via Claude)" <[email protected]>
+Date: Sat, 18 Jul 2026 21:42:32 +0000
+Subject: [PATCH] Add direct-Moonraker mode (no Home Assistant required)
+
+Adds an alternative to the Home Assistant + ha_creality_ws discovery/
+automation path: connect straight to a printer's Moonraker API.
+
+- lib/api/moonraker-direct.ts: queries box/print_stats directly, maps
+  into the existing HAPrinter/HATray/HAAMS shapes so nothing downstream
+  needed to change.
+- lib/direct-poller.ts: replaces HA-automation-triggered webhooks with
+  a background poller that detects per-slot remain_len drops and posts
+  the same spool_usage payload an HA automation would have sent,
+  reusing the existing lengthToWeight() conversion unchanged.
+- lib/direct-printers.ts: printer config list stored in the existing
+  Settings key/value table, no schema migration.
+- lib/material-names.ts: material-code table (no ha_creality_ws to do
+  this translation in direct mode).
+- New /direct-printers page + nav link; small additive patches to
+  api/printers/route.ts and api/settings/route.ts.
+- docker-compose.direct.yml: runs the app alone, no HA container.
+- DIRECT_MODE.md documents setup and, explicitly, what this does NOT
+  confirm (no RFID auto-match without ha_creality_ws; per-slot usage-
+  by-polling is new logic, not bench-verified against real hardware).
+
+Verified before commit: tsc --noEmit clean throughout, a full
+'next build' with system TLS certs succeeds, and vitest run passes
+65/65 (57 original + 8 new for moonraker-direct.ts).
+
+See DIRECT_MODE.md for full detail.
+---
+ DIRECT_MODE.md                           | 100 ++++++++++++
+ README.md                                |   7 +
+ app/package-lock.json                    |   4 +-
+ app/src/app/api/printers/route.ts        |  13 +-
+ app/src/app/api/settings/route.ts        |  34 ++++
+ app/src/app/direct-printers/page.tsx     | 156 ++++++++++++++++++
+ app/src/components/nav.tsx               |   1 +
+ app/src/instrumentation.ts               |  13 ++
+ app/src/lib/api/moonraker-direct.test.ts |  72 +++++++++
+ app/src/lib/api/moonraker-direct.ts      | 192 +++++++++++++++++++++++
+ app/src/lib/direct-poller.ts             | 147 +++++++++++++++++
+ app/src/lib/direct-printers.ts           |  65 ++++++++
+ app/src/lib/material-names.ts            |  61 +++++++
+ docker-compose.direct.yml                |  44 ++++++
+ 14 files changed, 904 insertions(+), 5 deletions(-)
+ create mode 100644 DIRECT_MODE.md
+ create mode 100644 app/src/app/direct-printers/page.tsx
+ create mode 100644 app/src/instrumentation.ts
+ create mode 100644 app/src/lib/api/moonraker-direct.test.ts
+ create mode 100644 app/src/lib/api/moonraker-direct.ts
+ create mode 100644 app/src/lib/direct-poller.ts
+ create mode 100644 app/src/lib/direct-printers.ts
+ create mode 100644 app/src/lib/material-names.ts
+ create mode 100644 docker-compose.direct.yml
+
+diff --git a/DIRECT_MODE.md b/DIRECT_MODE.md
+new file mode 100644
+index 0000000..3acf105
+--- /dev/null
++++ b/DIRECT_MODE.md
+@@ -0,0 +1,100 @@
++# Direct Mode — SpoolmanSync without Home Assistant
++
++This is a fork of [gibz104/SpoolmanSync](https://github.com/gibz104/SpoolmanSync)
++(MIT licensed — see `LICENSE.txt`), with one addition: a way to connect
++straight to a printer's Moonraker API instead of going through Home
++Assistant + `ha_creality_ws`. Everything else — the dashboard, spool
++matching, low-stock alerts, QR/label printing, reports — is unmodified
++upstream SpoolmanSync.
++
++If you already have Home Assistant, use upstream's normal HA modes instead —
++they have RFID auto-match, which direct mode doesn't (see below). Direct
++mode exists specifically for people who don't run Home Assistant and don't
++want to add it just for this.
++
++## What changed, file by file
++
++- `app/src/lib/api/moonraker-direct.ts` — queries a printer's `box` and
++  `print_stats` Moonraker objects directly over HTTP and maps the result
++  into the same `HAPrinter`/`HATray`/`HAAMS` shapes `lib/api/homeassistant.ts`
++  produces, so nothing downstream (dashboard rendering, spool matching,
++  mismatch detection) needed to change.
++- `app/src/lib/direct-poller.ts` — replaces the role Home Assistant
++  automations normally play (watching for tray/print state changes and
++  POSTing `spool_usage` events to `/api/webhook`). This polls each
++  configured printer's CFS slots directly, and when a slot's remaining
++  length has dropped since the last poll, POSTs the same webhook payload an
++  HA automation would have sent.
++- `app/src/lib/direct-printers.ts` — stores the list of directly-connected
++  printers (name + Moonraker URL) in the existing generic `Settings`
++  key/value table. No database schema migration was needed.
++- `app/src/lib/material-names.ts` — a small material-code→name table, since
++  there's no `ha_creality_ws` doing that translation in direct mode.
++- `app/src/instrumentation.ts` — boots the poller when the server starts.
++- `app/src/app/direct-printers/page.tsx` — a page for adding/removing direct
++  printers.
++- `app/src/app/api/printers/route.ts`, `app/src/app/api/settings/route.ts`,
++  `app/src/components/nav.tsx` — small additive patches so the above plugs
++  into the existing discovery/settings/nav flow.
++- `docker-compose.direct.yml` — runs just the SpoolmanSync app container, no
++  Home Assistant container at all.
++
++## Setup
++
++1. `docker compose -f docker-compose.direct.yml up -d`
++2. Open `http://<this-host>:3000`, go to **Settings**, connect your existing
++   Spoolman instance.
++3. Go to **Direct Printers**, add your printer: a name and its Moonraker
++   URL (typically `http://<printer-ip>:7125`).
++4. The dashboard now discovers CFS slots straight from that printer. Assign
++   spools by clicking a slot, same as upstream.
++
++Adding at least one printer here switches printer discovery for the whole
++app to direct mode — `/api/printers` stops calling Home Assistant entirely
++once a direct printer is configured. Removing all direct printers falls
++back to the Home Assistant path automatically.
++
++## What this does NOT give you, compared to the Home Assistant path
++
++**RFID auto-match doesn't work in direct mode.** Upstream's
++`ha_creality_ws`-based path can read a spool's RFID/serial number and
++automatically recognise a physical spool it's seen before. The Moonraker
++`box` object (per the community documentation this fork relies on) does not
++confirm exposing that serial number — only material code, colour, and
++remaining length. Without it, spool assignment in direct mode is
++manual-click or material/colour matching only. If a future firmware or
++Moonraker component exposes the tag serial through `box` or another object,
++`lib/api/moonraker-direct.ts`'s `slotToTray()` is the one place to add it.
++
++**Per-slot usage tracking is new code, not a port of anything upstream.**
++`lib/direct-poller.ts` was written for this fork. It assumes a CFS slot's
++`remain_len` decreases monotonically during a print and only increases when
++a spool is swapped — a reasonable assumption, not a confirmed one. It polls
++every 30 seconds by default (`DIRECT_POLL_INTERVAL_MS`), so usage is
++attributed in discrete chunks, not in real time. This has been verified by
++unit tests and a full `next build`/`tsc`/`vitest` pass in isolation — it has
++**not** been run against a real printer. Watch the **Logs** page after your
++first few prints to confirm deductions look right before trusting it
++unattended.
++
++**The `box`/`M8200` schema itself is confirmed on K2 Plus, not K2 Pro.**
++Same caveat as the OpenFilamentCFS Android project this fork is a companion
++to: the field names (`color_value`, `material_type`, `remain_len`, `state`,
++`auto_refill`) come from community reverse-engineering documented as
++confirmed on K2 Plus; K2/K2 Pro are marked untested in that source. If your
++K2 Pro reports different field names, `lib/api/moonraker-direct.ts` is a
++single, small file to adjust — that was the point of keeping it separate
++from `lib/api/homeassistant.ts` rather than patching HA-discovery logic
++in place.
++
++## Relationship to OpenFilamentCFS
++
++This fork's `lib/api/moonraker-direct.ts` uses the same `box` object schema
++(and the same 41-entry material-code table) as the OpenFilamentCFS Android
++app's `MoonrakerClient.kt` and `MaterialCodes.kt` — both trace back to the
++same community documentation, kept consistent on purpose. OpenFilamentCFS
++writes the serial-number-as-Spoolman-spool-ID convention into a tag at
++tagging time; that convention is what upstream's RFID auto-match consumes.
++Direct mode can't consume it (see above) until the tag serial is
++independently confirmed available from Moonraker — at which point it should
++be usable the same way here.
+diff --git a/README.md b/README.md
+index c76a964..79eb505 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,12 @@
+ # SpoolmanSync
+ 
++> **This is a fork.** It adds a Home-Assistant-free "Direct Mode" that
++> connects straight to a printer's Moonraker API — see
++> [`DIRECT_MODE.md`](DIRECT_MODE.md) for what that is, how to set it up, and
++> what it honestly does/doesn't confirm. Everything below this notice is
++> unmodified upstream documentation from
++> [gibz104/SpoolmanSync](https://github.com/gibz104/SpoolmanSync) (MIT).
++
+ **Automatic filament tracking for Bambu Lab and Creality printers with Spoolman**
+ 
+ ![Build Status](https://github.com/gibz104/SpoolmanSync/actions/workflows/docker-publish.yml/badge.svg)
+diff --git a/app/package-lock.json b/app/package-lock.json
+index f4daf35..f6aecc7 100644
+--- a/app/package-lock.json
++++ b/app/package-lock.json
+@@ -1,12 +1,12 @@
+ {
+   "name": "app",
+-  "version": "1.5.3",
++  "version": "1.6.5",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "app",
+-      "version": "1.5.3",
++      "version": "1.6.5",
+       "dependencies": {
+         "@prisma/adapter-better-sqlite3": "^7.2.0",
+         "@prisma/client": "^7.3.0",
+diff --git a/app/src/app/api/printers/route.ts b/app/src/app/api/printers/route.ts
+index ddd0cb3..1601f0c 100644
+--- a/app/src/app/api/printers/route.ts
++++ b/app/src/app/api/printers/route.ts
+@@ -4,6 +4,8 @@ import { HomeAssistantClient, HATray } from '@/lib/api/homeassistant';
+ import { SpoolmanClient, Spool } from '@/lib/api/spoolman';
+ import { getHiddenPrinters } from '@/app/api/printers/setup/route';
+ import { getVirtualPrinters, virtualPrintersToHAPrinters, migrateVirtualKeys, withVirtualLock } from '@/lib/virtual-printers';
++import { getDirectPrinterConfigs } from '@/lib/direct-printers';
++import { discoverDirectPrinters } from '@/lib/api/moonraker-direct';
+ 
+ interface MismatchInfo {
+   type: 'material' | 'color' | 'both';
+@@ -93,14 +95,19 @@ function detectTrayMismatch(tray: HATray, assignedSpool: Spool): MismatchInfo |
+ 
+ export async function GET() {
+   try {
+-    const haClient = await HomeAssistantClient.fromConnection();
++    const directConfigs = await getDirectPrinterConfigs();
++    const directMode = directConfigs.length > 0;
++
++    const haClient = directMode ? null : await HomeAssistantClient.fromConnection();
+     const spoolmanConnection = await prisma.spoolmanConnection.findFirst();
+ 
+-    if (!haClient) {
++    if (!directMode && !haClient) {
+       return NextResponse.json({ error: 'Home Assistant not configured' }, { status: 400 });
+     }
+ 
+-    const allPrinters = await haClient.discoverPrinters();
++    const allPrinters = directMode
++      ? await discoverDirectPrinters(directConfigs.map(c => ({ name: c.name, moonrakerUrl: c.moonrakerUrl })))
++      : await haClient!.discoverPrinters();
+ 
+     // Filter out printers removed from SpoolmanSync
+     const hiddenPrintersList = await getHiddenPrinters();
+diff --git a/app/src/app/api/settings/route.ts b/app/src/app/api/settings/route.ts
+index 66d5f16..7ec4b0c 100644
+--- a/app/src/app/api/settings/route.ts
++++ b/app/src/app/api/settings/route.ts
+@@ -11,6 +11,7 @@ import {
+ } from '@/lib/api/homeassistant';
+ import { createActivityLog } from '@/lib/activity-log';
+ import { isWebhookAuthEnabled } from '@/lib/webhook-secret';
++import { getDirectPrinterConfigs, addDirectPrinter, removeDirectPrinter } from '@/lib/direct-printers';
+ 
+ export async function GET() {
+   try {
+@@ -70,6 +71,7 @@ export async function GET() {
+         neverAutoClearTray: neverAutoClearSetting?.value === 'true',
+         syncSpoolmanLocation: syncLocationSetting?.value === 'true',
+         webhookConfigured: webhookAuthEnabled,
++        directPrinters: await getDirectPrinterConfigs(),
+       });
+     }
+ 
+@@ -270,6 +272,7 @@ export async function GET() {
+       neverAutoClearTray: neverAutoClearSetting?.value === 'true',
+       syncSpoolmanLocation: syncLocationSetting?.value === 'true',
+       webhookConfigured: webhookAuthEnabled,
++      directPrinters: await getDirectPrinterConfigs(),
+     });
+   } catch (error) {
+     console.error('Error fetching settings:', error);
+@@ -411,6 +414,24 @@ export async function POST(request: NextRequest) {
+       return NextResponse.json({ success: true });
+     }
+ 
++    if (type === 'direct_printer_add') {
++      // Adds a directly-connected (no Home Assistant) printer, discovered by
++      // querying its Moonraker HTTP API directly. See lib/api/moonraker-direct.ts.
++      const { name, moonrakerUrl } = body;
++      if (!name || typeof name !== 'string' || !name.trim()) {
++        return NextResponse.json({ error: 'A printer name is required' }, { status: 400 });
++      }
++      if (!moonrakerUrl || typeof moonrakerUrl !== 'string' || !moonrakerUrl.trim()) {
++        return NextResponse.json({ error: 'A Moonraker URL is required' }, { status: 400 });
++      }
++      const entry = await addDirectPrinter(name, moonrakerUrl);
++      await createActivityLog({
++        type: 'connection',
++        message: `Direct printer "${entry.name}" added (${entry.moonrakerUrl})`,
++      });
++      return NextResponse.json({ success: true, printer: entry });
++    }
++
+     if (type === 'spoolman') {
+       // Validate input before constructing the client (avoid a 500 on bad input)
+       if (!url || typeof url !== 'string' || !url.trim()) {
+@@ -500,6 +521,19 @@ export async function DELETE(request: NextRequest) {
+       return NextResponse.json({ success: true });
+     }
+ 
++    if (type === 'direct_printer') {
++      const { id } = body;
++      if (!id || typeof id !== 'string') {
++        return NextResponse.json({ error: 'A printer id is required' }, { status: 400 });
++      }
++      await removeDirectPrinter(id);
++      await createActivityLog({
++        type: 'connection',
++        message: 'Direct printer removed',
++      });
++      return NextResponse.json({ success: true });
++    }
++
+     if (type === 'spoolman') {
+       await prisma.spoolmanConnection.deleteMany();
+ 
+diff --git a/app/src/app/direct-printers/page.tsx b/app/src/app/direct-printers/page.tsx
+new file mode 100644
+index 0000000..2777b1c
+--- /dev/null
++++ b/app/src/app/direct-printers/page.tsx
+@@ -0,0 +1,156 @@
++'use client';
++
++import { useState, useEffect } from 'react';
++import { Nav } from '@/components/nav';
++import { Button } from '@/components/ui/button';
++import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
++import { Input } from '@/components/ui/input';
++import { Label } from '@/components/ui/label';
++import { toast } from 'sonner';
++
++interface DirectPrinterConfig {
++  id: string;
++  name: string;
++  moonrakerUrl: string;
++}
++
++export default function DirectPrintersPage() {
++  const [printers, setPrinters] = useState<DirectPrinterConfig[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [saving, setSaving] = useState(false);
++  const [name, setName] = useState('');
++  const [moonrakerUrl, setMoonrakerUrl] = useState('');
++
++  useEffect(() => {
++    fetchSettings();
++  }, []);
++
++  const fetchSettings = async () => {
++    setLoading(true);
++    try {
++      const res = await fetch('/api/settings');
++      const data = await res.json();
++      setPrinters(data.directPrinters || []);
++    } catch (err) {
++      console.error('Failed to load direct printers:', err);
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  const addPrinter = async () => {
++    if (!name.trim() || !moonrakerUrl.trim()) {
++      toast.error('Name and Moonraker URL are both required');
++      return;
++    }
++    setSaving(true);
++    try {
++      const res = await fetch('/api/settings', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ type: 'direct_printer_add', name, moonrakerUrl }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        toast.error(data.error || 'Failed to add printer');
++        return;
++      }
++      toast.success(`${name} added`);
++      setName('');
++      setMoonrakerUrl('');
++      await fetchSettings();
++    } catch {
++      toast.error('Failed to add printer');
++    } finally {
++      setSaving(false);
++    }
++  };
++
++  const removePrinter = async (id: string, printerName: string) => {
++    try {
++      const res = await fetch('/api/settings', {
++        method: 'DELETE',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ type: 'direct_printer', id }),
++      });
++      if (!res.ok) {
++        toast.error('Failed to remove printer');
++        return;
++      }
++      toast.success(`${printerName} removed`);
++      await fetchSettings();
++    } catch {
++      toast.error('Failed to remove printer');
++    }
++  };
++
++  return (
++    <div className="min-h-screen bg-background">
++      <Nav />
++      <main className="w-full max-w-3xl mx-auto px-3 sm:px-4 md:px-6 py-6 space-y-6">
++        <div>
++          <h1 className="text-2xl font-bold">Direct Printers</h1>
++          <p className="text-sm text-muted-foreground mt-1">
++            Connect directly to a printer&apos;s Moonraker API — no Home Assistant, no
++            ha_creality_ws. Adding at least one printer here switches the whole app
++            to direct mode: the dashboard discovers CFS slots straight from Moonraker,
++            and a background poller (not an HA automation) tracks usage. See
++            DIRECT_MODE.md for what this does and does not confirm.
++          </p>
++        </div>
++
++        <Card>
++          <CardHeader>
++            <CardTitle>Add a printer</CardTitle>
++            <CardDescription>
++              The Moonraker URL is usually <code>http://&lt;printer-ip&gt;:7125</code>.
++            </CardDescription>
++          </CardHeader>
++          <CardContent className="space-y-3">
++            <div>
++              <Label htmlFor="printer-name">Name</Label>
++              <Input id="printer-name" placeholder="K2 Pro" value={name} onChange={(e) => setName(e.target.value)} />
++            </div>
++            <div>
++              <Label htmlFor="moonraker-url">Moonraker URL</Label>
++              <Input id="moonraker-url" placeholder="http://192.168.1.50:7125" value={moonrakerUrl} onChange={(e) => setMoonrakerUrl(e.target.value)} />
++            </div>
++            <Button onClick={addPrinter} disabled={saving}>
++              {saving ? 'Adding…' : 'Add printer'}
++            </Button>
++          </CardContent>
++        </Card>
++
++        <Card>
++          <CardHeader>
++            <CardTitle>Configured printers</CardTitle>
++          </CardHeader>
++          <CardContent>
++            {loading ? (
++              <p className="text-sm text-muted-foreground">Loading…</p>
++            ) : printers.length === 0 ? (
++              <p className="text-sm text-muted-foreground">
++                No direct printers configured yet. The dashboard will fall back to
++                Home Assistant discovery until you add one here.
++              </p>
++            ) : (
++              <ul className="space-y-2">
++                {printers.map((p) => (
++                  <li key={p.id} className="flex items-center justify-between rounded-md border p-3">
++                    <div>
++                      <div className="font-medium">{p.name}</div>
++                      <div className="text-xs text-muted-foreground">{p.moonrakerUrl}</div>
++                    </div>
++                    <Button variant="ghost" size="sm" onClick={() => removePrinter(p.id, p.name)}>
++                      Remove
++                    </Button>
++                  </li>
++                ))}
++              </ul>
++            )}
++          </CardContent>
++        </Card>
++      </main>
++    </div>
++  );
++}
+diff --git a/app/src/components/nav.tsx b/app/src/components/nav.tsx
+index f4dec1e..7051c7a 100644
+--- a/app/src/components/nav.tsx
++++ b/app/src/components/nav.tsx
+@@ -12,6 +12,7 @@ const navItems = [
+   { href: '/scan', label: 'Scan' },
+   { href: '/reports', label: 'Reports' },
+   { href: '/automations', label: 'Automations' },
++  { href: '/direct-printers', label: 'Direct Printers' },
+   { href: '/settings', label: 'Settings' },
+   { href: '/logs', label: 'Logs' },
+ ];
+diff --git a/app/src/instrumentation.ts b/app/src/instrumentation.ts
+new file mode 100644
+index 0000000..3f2cc30
+--- /dev/null
++++ b/app/src/instrumentation.ts
+@@ -0,0 +1,13 @@
++/**
++ * Next.js instrumentation hook — runs once when the server process starts.
++ * Used here only to boot the direct-mode usage poller (lib/direct-poller.ts).
++ * No-op in environments where direct mode isn't configured; the poller
++ * checks configuration on every cycle rather than requiring a restart.
++ * https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
++ */
++export async function register() {
++  if (process.env.NEXT_RUNTIME === 'nodejs') {
++    const { startDirectPoller } = await import('@/lib/direct-poller');
++    startDirectPoller();
++  }
++}
+diff --git a/app/src/lib/api/moonraker-direct.test.ts b/app/src/lib/api/moonraker-direct.test.ts
+new file mode 100644
+index 0000000..b8c1c13
+--- /dev/null
++++ b/app/src/lib/api/moonraker-direct.test.ts
+@@ -0,0 +1,72 @@
++import { describe, it, expect } from 'vitest';
++import { mapToHAPrinter, prefixFromName, synthesizeTrayId } from './moonraker-direct';
++import type { MoonrakerQueryResult } from './moonraker-direct';
++
++describe('prefixFromName', () => {
++  it('slugifies a printer name into a stable prefix', () => {
++    expect(prefixFromName('K2 Pro')).toBe('k2_pro');
++    expect(prefixFromName('  Office K2 Pro!  ')).toBe('office_k2_pro');
++    expect(prefixFromName('K2-Pro #2')).toBe('k2_pro_2');
++  });
++
++  it('never returns an empty string', () => {
++    expect(prefixFromName('!!!')).toBe('printer');
++  });
++});
++
++describe('synthesizeTrayId', () => {
++  it('is stable for the same prefix and slot number', () => {
++    expect(synthesizeTrayId('k2_pro', 1)).toBe('k2_pro_cfs_slot_1');
++    expect(synthesizeTrayId('k2_pro', 1)).toBe(synthesizeTrayId('k2_pro', 1));
++  });
++
++  it('differs across slots on the same printer', () => {
++    expect(synthesizeTrayId('k2_pro', 1)).not.toBe(synthesizeTrayId('k2_pro', 2));
++  });
++});
++
++describe('mapToHAPrinter', () => {
++  it('reports offline when Moonraker is unreachable', () => {
++    const result: MoonrakerQueryResult = { box: null, print_stats: null };
++    const printer = mapToHAPrinter('K2 Pro', 'k2_pro', result);
++    expect(printer.state).toBe('offline');
++    expect(printer.ams_units).toHaveLength(0);
++    expect(printer.brand).toBe('creality');
++  });
++
++  it('strips the documented format-digit prefixes from color and material', () => {
++    const result: MoonrakerQueryResult = {
++      box: {
++        T1: { color_value: '0FF0000', material_type: '101001', remain_len: 250, state: 'idle' },
++      },
++      print_stats: { state: 'standby' },
++    };
++    const printer = mapToHAPrinter('K2 Pro', 'k2_pro', result);
++    const slot = printer.ams_units[0].trays[0];
++    expect(slot.color).toBe('FF0000');
++    // material_type "101001" -> strip leading "1" -> "01001" -> HyperPLA
++    expect(slot.material).toBe('HyperPLA');
++    expect(slot.tray_uuid).toBeUndefined(); // no RFID serial available without ha_creality_ws
++  });
++
++  it('includes empty slots so they can still be assigned a spool', () => {
++    const result: MoonrakerQueryResult = {
++      box: { T1: undefined, T2: { color_value: undefined, material_type: undefined, remain_len: 0, state: 'empty' } },
++      print_stats: { state: 'standby' },
++    };
++    const printer = mapToHAPrinter('K2 Pro', 'k2_pro', result);
++    // T1 undefined -> not included; T2 present but empty -> included with no material/color
++    expect(printer.ams_units[0].trays).toHaveLength(1);
++    expect(printer.ams_units[0].trays[0].tray_number).toBe(2);
++    expect(printer.ams_units[0].trays[0].material).toBeUndefined();
++  });
++
++  it('produces the same synthetic tray ids that synthesizeTrayId would', () => {
++    const result: MoonrakerQueryResult = {
++      box: { T1: { color_value: '0000000', material_type: '100001', remain_len: 300 } },
++      print_stats: null,
++    };
++    const printer = mapToHAPrinter('K2 Pro', 'k2_pro', result);
++    expect(printer.ams_units[0].trays[0].unique_id).toBe(synthesizeTrayId('k2_pro', 1));
++  });
++});
+diff --git a/app/src/lib/api/moonraker-direct.ts b/app/src/lib/api/moonraker-direct.ts
+new file mode 100644
+index 0000000..e58399d
+--- /dev/null
++++ b/app/src/lib/api/moonraker-direct.ts
+@@ -0,0 +1,192 @@
++/**
++ * Direct Moonraker client for CFS printer discovery — NO Home Assistant,
++ * NO ha_creality_ws. Queries the printer's Moonraker HTTP API directly.
++ *
++ * This is an additive alternative to lib/api/homeassistant.ts's
++ * discoverCrealityPrinters(), which requires Home Assistant + ha_creality_ws
++ * as an intermediary. Direct mode instead talks straight to Moonraker's
++ * `box` object, matching the same `HAPrinter`/`HATray`/`HAAMS` shapes so the
++ * rest of the app (spool matching, mismatch detection, dashboard rendering)
++ * needs no changes at all.
++ *
++ * IMPORTANT — what is and isn't confirmed here:
++ * - The `box` object field names below (color_value, material_type,
++ *   remain_len, temperature, state, auto_refill) come from community
++ *   reverse-engineering documented as CONFIRMED ON K2 PLUS. K2/K2 Pro are
++ *   marked untested in that same source. Treat this as high-probability,
++ *   not verified, until confirmed against real hardware.
++ * - Unlike ha_creality_ws, this direct client has NO independent way to read
++ *   a tag's RFID/serial number — that is exposed (if at all) through
++ *   Creality's own display-server protocol, not confirmed present in the
++ *   Moonraker `box` object. `tray_uuid` is therefore left undefined here;
++ *   RFID auto-match (matching a spool by its tag serial) is not available
++ *   in direct mode. Spool assignment still works by material/colour
++ *   matching and manual click-to-assign — it just can't auto-recognise a
++ *   tag the way the HA/ha_creality_ws path can.
++ * - Per-slot usage tracking (lib/direct-poller.ts) is NEW logic this fork
++ *   adds — it is not part of upstream SpoolmanSync or ha_creality_ws, and
++ *   has not been bench-verified against a real K2 Pro CFS. See
++ *   DIRECT_MODE.md.
++ */
++import { HAPrinter, HAAMS, HATray } from '@/lib/api/homeassistant';
++import { materialNameFor } from '@/lib/material-names';
++
++export interface MoonrakerBoxSlot {
++  color_value?: string;   // format "0RRGGBB"
++  material_type?: string; // format "1XXXXX"
++  remain_len?: number;    // metres remaining, per community docs
++  temperature?: number;
++  state?: string;
++}
++
++export interface MoonrakerBoxObject {
++  T1?: MoonrakerBoxSlot;
++  T2?: MoonrakerBoxSlot;
++  T3?: MoonrakerBoxSlot;
++  T4?: MoonrakerBoxSlot;
++  auto_refill?: boolean;
++  same_material?: unknown;
++  map?: unknown;
++}
++
++export interface MoonrakerPrintStats {
++  state?: string; // standby | printing | paused | complete | error | cancelled
++  filename?: string;
++  filament_used?: number; // mm, whole-printer total — not per-slot
++}
++
++export interface MoonrakerQueryResult {
++  box: MoonrakerBoxObject | null;
++  print_stats: MoonrakerPrintStats | null;
++}
++
++const REQUEST_TIMEOUT_MS = 4000;
++
++async function fetchWithTimeout(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), timeoutMs);
++  try {
++    return await fetch(url, { signal: controller.signal });
++  } finally {
++    clearTimeout(timeout);
++  }
++}
++
++/**
++ * Queries `box` and `print_stats` directly from Moonraker's HTTP API.
++ * Returns null fields (not a thrown error) on unreachable/offline printers
++ * so callers can render an "offline" state rather than failing the whole
++ * dashboard.
++ */
++export async function queryMoonraker(baseUrl: string): Promise<MoonrakerQueryResult> {
++  const clean = baseUrl.trim().replace(/\/+$/, '');
++  try {
++    const response = await fetchWithTimeout(`${clean}/printer/objects/query?box&print_stats`);
++    if (!response.ok) {
++      return { box: null, print_stats: null };
++    }
++    const json = await response.json();
++    const status = json?.result?.status ?? {};
++    return {
++      box: status.box ?? null,
++      print_stats: status.print_stats ?? null,
++    };
++  } catch {
++    return { box: null, print_stats: null };
++  }
++}
++
++/** Strips the community-documented leading format digit: "0RRGGBB" -> "RRGGBB". */
++function stripColorPrefix(value?: string): string | undefined {
++  if (!value) return undefined;
++  return value.length === 7 && value.startsWith('0') ? value.slice(1) : value;
++}
++
++/** Strips the community-documented leading format digit: "1XXXXX" -> "XXXXX". */
++export function stripMaterialPrefix(value?: string): string | undefined {
++  if (!value) return undefined;
++  return value.length === 6 && value.startsWith('1') ? value.slice(1) : value;
++}
++
++/** Builds the same synthetic entity_id/unique_id `slotToTray` uses, so the
++ * usage poller (lib/direct-poller.ts) can address the same tray keys that
++ * discovery produced. Centralised here to avoid the two staying in sync by
++ * accident. */
++export function synthesizeTrayId(prefix: string, trayNumber: number): string {
++  return `${prefix}_cfs_slot_${trayNumber}`;
++}
++
++function slotToTray(slot: MoonrakerBoxSlot | undefined, trayNumber: number, entityIdPrefix: string): HATray {
++  const materialCode = stripMaterialPrefix(slot?.material_type);
++  const colorHex = stripColorPrefix(slot?.color_value);
++  // Synthetic entity_id/unique_id: no real HA entity exists in direct mode,
++  // but the rest of the app keys spool assignments off these strings, so
++  // they must be stable across polls (same shape every time for the same
++  // physical slot).
++  const syntheticId = synthesizeTrayId(entityIdPrefix, trayNumber);
++  return {
++    entity_id: syntheticId,
++    unique_id: syntheticId,
++    tray_number: trayNumber,
++    name: materialCode ? materialNameFor(materialCode) : undefined,
++    color: colorHex,
++    material: materialCode ? materialNameFor(materialCode) : undefined,
++    tray_uuid: undefined, // not available without ha_creality_ws — see file header
++    remaining_weight: undefined, // computed separately by the usage poller, not discovery
++  };
++}
++
++/**
++ * Maps one printer's direct Moonraker query result into an `HAPrinter`.
++ * Slots with no material/colour reported (state absent or firmware not
++ * exposing a card) are still included as empty slots, matching the
++ * "assign a spool to an empty CFS slot" UX the dashboard already supports.
++ */
++export function mapToHAPrinter(name: string, prefix: string, result: MoonrakerQueryResult): HAPrinter {
++  const online = result.box !== null || result.print_stats !== null;
++  const trays: HATray[] = [];
++  if (result.box) {
++    const slots: Array<[number, MoonrakerBoxSlot | undefined]> = [
++      [1, result.box.T1], [2, result.box.T2], [3, result.box.T3], [4, result.box.T4],
++    ];
++    for (const [num, slot] of slots) {
++      if (slot !== undefined) trays.push(slotToTray(slot, num, prefix));
++    }
++  }
++
++  const ams: HAAMS[] = trays.length > 0
++    ? [{ entity_id: `${prefix}_cfs_box_1`, name: 'CFS', ams_number: 1, trays }]
++    : [];
++
++  return {
++    brand: 'creality',
++    entity_id: `${prefix}_print_status`,
++    name,
++    state: result.print_stats?.state || (online ? 'unknown' : 'offline'),
++    prefix,
++    ams_units: ams,
++    external_spools: [],
++  };
++}
++
++export function prefixFromName(name: string): string {
++  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'printer';
++}
++
++export interface DirectDiscoveryTarget {
++  name: string;
++  moonrakerUrl: string;
++}
++
++/** Discovers all configured direct-mode printers in parallel. Never throws —
++ * an unreachable printer comes back as an offline HAPrinter, same as any
++ * other transient network hiccup would look on the dashboard. */
++export async function discoverDirectPrinters(targets: DirectDiscoveryTarget[]): Promise<HAPrinter[]> {
++  const results = await Promise.all(
++    targets.map(async (target) => {
++      const result = await queryMoonraker(target.moonrakerUrl);
++      return mapToHAPrinter(target.name, prefixFromName(target.name), result);
++    })
++  );
++  return results;
++}
+diff --git a/app/src/lib/direct-poller.ts b/app/src/lib/direct-poller.ts
+new file mode 100644
+index 0000000..c6cd6c8
+--- /dev/null
++++ b/app/src/lib/direct-poller.ts
+@@ -0,0 +1,147 @@
++/**
++ * Direct-mode usage poller.
++ *
++ * Home Assistant's role in upstream SpoolmanSync isn't just discovery — its
++ * automations (homeassistant/automations.yaml) are what WATCH for tray/print
++ * state changes and POST `spool_usage` events to /api/webhook. Direct mode
++ * has no HA automations, so this poller replaces that trigger mechanism: it
++ * periodically reads each configured printer's CFS slot remaining-length
++ * directly from Moonraker, and when a slot's remaining length has dropped
++ * since the last poll, POSTs the same `spool_usage` webhook payload an HA
++ * automation would have sent — using `used_length` (cm) so the existing
++ * webhook handler's own `lengthToWeight()` conversion is reused unchanged.
++ *
++ * THIS IS NEW LOGIC, not part of upstream SpoolmanSync or ha_creality_ws.
++ * It has not been bench-verified against a real K2 Pro CFS. In particular:
++ * - It assumes `box.T{n}.remain_len` decreases monotonically during a print
++ *   and only increases when a spool is physically swapped/refilled. This is
++ *   a reasonable assumption, not a confirmed one.
++ * - Polling (default every 30s) means usage is attributed in discrete
++ *   chunks rather than in real time — acceptable for inventory tracking,
++ *   not for anything time-critical.
++ * - A power cycle or restart resets nothing destructively (baselines are
++ *   persisted to the Settings table every cycle), but a missed poll during
++ *   a very fast print could under-count if the printer's own state resets
++ *   the counter between polls. See DIRECT_MODE.md.
++ */
++import prisma from '@/lib/db';
++import { getDirectPrinterConfigs, DirectPrinterConfig } from '@/lib/direct-printers';
++import { queryMoonraker, synthesizeTrayId, prefixFromName, stripMaterialPrefix } from '@/lib/api/moonraker-direct';
++import { materialNameFor } from '@/lib/material-names';
++import { getWebhookSecret, WEBHOOK_TOKEN_HEADER } from '@/lib/webhook-secret';
++
++const BASELINE_SETTINGS_KEY = 'direct_poller_baselines';
++const DEFAULT_POLL_INTERVAL_MS = 30_000;
++const MIN_DELTA_METRES = 0.02; // ignore sub-2cm jitter as noise, not usage
++
++type BaselineMap = Record<string, number>; // `${printerId}:${trayNumber}` -> metres
++
++async function loadBaselines(): Promise<BaselineMap> {
++  const setting = await prisma.settings.findUnique({ where: { key: BASELINE_SETTINGS_KEY } });
++  if (!setting) return {};
++  try {
++    const parsed = JSON.parse(setting.value);
++    return typeof parsed === 'object' && parsed !== null ? parsed : {};
++  } catch {
++    return {};
++  }
++}
++
++async function saveBaselines(baselines: BaselineMap): Promise<void> {
++  await prisma.settings.upsert({
++    where: { key: BASELINE_SETTINGS_KEY },
++    create: { key: BASELINE_SETTINGS_KEY, value: JSON.stringify(baselines) },
++    update: { value: JSON.stringify(baselines) },
++  });
++}
++
++function webhookBaseUrl(): string {
++  const port = process.env.PORT || '3000';
++  return `http://127.0.0.1:${port}`;
++}
++
++async function postUsageWebhook(activeTrayId: string, usedLengthCm: number, material: string | undefined): Promise<void> {
++  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
++  const secret = await getWebhookSecret();
++  if (secret) headers[WEBHOOK_TOKEN_HEADER] = secret;
++
++  try {
++    await fetch(`${webhookBaseUrl()}/api/webhook`, {
++      method: 'POST',
++      headers,
++      body: JSON.stringify({
++        event: 'spool_usage',
++        active_tray_id: activeTrayId,
++        used_length: usedLengthCm,
++        material,
++      }),
++    });
++  } catch (err) {
++    console.error(`[direct-poller] Failed to post usage webhook for ${activeTrayId}:`, err);
++  }
++}
++
++async function pollOnce(): Promise<void> {
++  const configs = await getDirectPrinterConfigs();
++  if (configs.length === 0) return;
++
++  const baselines = await loadBaselines();
++  let baselinesChanged = false;
++
++  for (const config of configs) {
++    const result = await queryMoonraker(config.moonrakerUrl);
++    if (!result.box) continue; // printer offline/unreachable this cycle — skip, don't zero anything out
++
++    const prefix = prefixFromName(config.name);
++    const slots: Array<[number, { remain_len?: number; material_type?: string } | undefined]> = [
++      [1, result.box.T1], [2, result.box.T2], [3, result.box.T3], [4, result.box.T4],
++    ];
++
++    for (const [trayNumber, slot] of slots) {
++      if (!slot || typeof slot.remain_len !== 'number') continue;
++
++      const baselineKey = `${config.id}:${trayNumber}`;
++      const currentRemain = slot.remain_len;
++      const previousRemain = baselines[baselineKey];
++
++      if (typeof previousRemain !== 'number') {
++        // First observation of this slot — establish baseline, emit nothing.
++        baselines[baselineKey] = currentRemain;
++        baselinesChanged = true;
++        continue;
++      }
++
++      const deltaMetres = previousRemain - currentRemain;
++
++      if (deltaMetres > MIN_DELTA_METRES) {
++        const trayId = synthesizeTrayId(prefix, trayNumber);
++        const materialCode = stripMaterialPrefix(slot.material_type);
++        const materialName = materialCode ? materialNameFor(materialCode) : undefined;
++        await postUsageWebhook(trayId, deltaMetres * 100, materialName);
++      }
++      // Any outcome (usage, noise, or a refill/increase) resets the baseline
++      // to the current reading so the next cycle measures from here.
++      baselines[baselineKey] = currentRemain;
++      baselinesChanged = true;
++    }
++  }
++
++  if (baselinesChanged) {
++    await saveBaselines(baselines);
++  }
++}
++
++let pollTimer: ReturnType<typeof setInterval> | null = null;
++
++/** Starts the direct-mode poller. Safe to call multiple times — only one
++ * interval is ever active. No-op when no direct printers are configured;
++ * each cycle re-checks configuration, so enabling direct mode later doesn't
++ * require a restart. */
++export function startDirectPoller(): void {
++  if (pollTimer) return;
++  const intervalMs = Number(process.env.DIRECT_POLL_INTERVAL_MS) || DEFAULT_POLL_INTERVAL_MS;
++  pollTimer = setInterval(() => {
++    pollOnce().catch((err) => console.error('[direct-poller] Poll cycle failed:', err));
++  }, intervalMs);
++  console.log(`[direct-poller] Started, polling every ${intervalMs}ms`);
++}
+diff --git a/app/src/lib/direct-printers.ts b/app/src/lib/direct-printers.ts
+new file mode 100644
+index 0000000..2e88d49
+--- /dev/null
++++ b/app/src/lib/direct-printers.ts
+@@ -0,0 +1,65 @@
++/**
++ * Direct-connect printer configuration (no Home Assistant).
++ *
++ * Stores a list of { name, moonrakerUrl } pairs in the existing generic
++ * `Settings` key/value table (no schema migration needed — same pattern
++ * `spool_filter_config` / `qr_base_url` already use). When this list is
++ * non-empty, `/api/printers` uses direct Moonraker discovery
++ * (lib/api/moonraker-direct.ts) instead of Home Assistant, and the poller
++ * (lib/direct-poller.ts) polls these printers directly for usage tracking.
++ */
++import prisma from '@/lib/db';
++
++const SETTINGS_KEY = 'direct_printers';
++
++export interface DirectPrinterConfig {
++  /** Stable id for this config entry (not a Moonraker/HA id — generated here). */
++  id: string;
++  /** Display name shown on the dashboard. */
++  name: string;
++  /** Moonraker base URL, e.g. http://192.168.1.50:7125 */
++  moonrakerUrl: string;
++}
++
++export async function getDirectPrinterConfigs(): Promise<DirectPrinterConfig[]> {
++  const setting = await prisma.settings.findUnique({ where: { key: SETTINGS_KEY } });
++  if (!setting) return [];
++  try {
++    const parsed = JSON.parse(setting.value);
++    if (!Array.isArray(parsed)) return [];
++    return parsed;
++  } catch {
++    return [];
++  }
++}
++
++export async function setDirectPrinterConfigs(configs: DirectPrinterConfig[]): Promise<void> {
++  await prisma.settings.upsert({
++    where: { key: SETTINGS_KEY },
++    create: { key: SETTINGS_KEY, value: JSON.stringify(configs) },
++    update: { value: JSON.stringify(configs) },
++  });
++}
++
++export async function isDirectModeEnabled(): Promise<boolean> {
++  const configs = await getDirectPrinterConfigs();
++  return configs.length > 0;
++}
++
++function randomId(): string {
++  return `direct_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
++}
++
++export async function addDirectPrinter(name: string, moonrakerUrl: string): Promise<DirectPrinterConfig> {
++  const configs = await getDirectPrinterConfigs();
++  const cleanUrl = moonrakerUrl.trim().replace(/\/+$/, '');
++  const entry: DirectPrinterConfig = { id: randomId(), name: name.trim(), moonrakerUrl: cleanUrl };
++  configs.push(entry);
++  await setDirectPrinterConfigs(configs);
++  return entry;
++}
++
++export async function removeDirectPrinter(id: string): Promise<void> {
++  const configs = await getDirectPrinterConfigs();
++  await setDirectPrinterConfigs(configs.filter(c => c.id !== id));
++}
+diff --git a/app/src/lib/material-names.ts b/app/src/lib/material-names.ts
+new file mode 100644
+index 0000000..b451474
+--- /dev/null
++++ b/app/src/lib/material-names.ts
+@@ -0,0 +1,61 @@
++/**
++ * Creality CFS material-code → display-name table.
++ *
++ * ha_creality_ws normally does this translation for you (it has its own
++ * material-database lookup baked in). Direct Moonraker mode has no such
++ * layer, so this is a minimal port of the same 41-entry table used in the
++ * OpenFilamentCFS Android project, itself ported from the community-verified
++ * DnG-Crafts/K2-RFID lineage (see that project's THIRD_PARTY.yml). Treat
++ * these as the verified set — if a real printer reports a code not in this
++ * table, fall back to the raw code rather than guessing a name.
++ */
++export const MATERIAL_NAMES: Record<string, string> = {
++  '10001': 'HP-TPU',
++  '11001': 'CR-Nylon',
++  '13001': 'CR-PLACarbon',
++  '14001': 'CR-PLAMatte',
++  '15001': 'CR-PLAFluo',
++  '16001': 'CR-TPU',
++  '17001': 'CR-Wood',
++  '18001': 'HPUltraPLA',
++  '19001': 'HP-ASA',
++  '07001': 'CR-ABS',
++  '06001': 'CR-PETG',
++  '04001': 'CR-PLA',
++  '05001': 'CR-Silk',
++  '09001': 'EN-PLA+',
++  '09002': 'ENDERFASTPLA',
++  '08001': 'Ender-PLA',
++  '00004': 'ABS',
++  '00007': 'ASA',
++  '00010': 'BVOH',
++  '00012': 'HIPS',
++  '00008': 'PA',
++  '00009': 'PA-CF',
++  '00015': 'PA6-CF',
++  '00016': 'PAHT-CF',
++  '00021': 'PC',
++  '00020': 'PET',
++  '00013': 'PET-CF',
++  '00003': 'PETG',
++  '00014': 'PETG-CF',
++  '00001': 'PLA',
++  '00006': 'PLA-CF',
++  '00002': 'PLA-Silk',
++  '00019': 'PP',
++  '00017': 'PPS',
++  '00018': 'PPS-CF',
++  '00011': 'PVA',
++  '00005': 'TPU',
++  '03001': 'HyperABS',
++  '06002': 'HyperPETG',
++  '01001': 'HyperPLA',
++  '02001': 'HyperPLA-CF',
++};
++
++/** Best-effort material name for display/matching. Returns the raw code
++ * (never a guessed name) when the code isn't in the verified table. */
++export function materialNameFor(code: string | undefined | null): string | undefined {
++  if (!code) return undefined;
++  return MATERIAL_NAMES[code] || code;
++}
+diff --git a/docker-compose.direct.yml b/docker-compose.direct.yml
+new file mode 100644
+index 0000000..4dc274b
+--- /dev/null
++++ b/docker-compose.direct.yml
+@@ -0,0 +1,44 @@
++# SpoolmanSync — Direct Mode (no Home Assistant)
++#
++# Runs SpoolmanSync alone, connecting straight to your printer's Moonraker
++# API instead of via Home Assistant + ha_creality_ws. See DIRECT_MODE.md for
++# what this does and does not confirm before relying on it.
++#
++# You still need a running Spoolman instance somewhere on your network —
++# this file does not bundle one (same as upstream's docker-compose.yml,
++# which also expects Spoolman to already exist and be configured via the
++# Settings page after first boot).
++#
++# Usage:
++#   docker compose -f docker-compose.direct.yml up -d
++#
++# Then open http://<this-host>:3000, go to Settings and connect Spoolman,
++# then go to Direct Printers and add your K2 Pro's Moonraker URL
++# (typically http://<printer-ip>:7125).
++
++services:
++  app:
++    build:
++      context: ./app
++      dockerfile: Dockerfile
++    container_name: spoolmansync-app-direct
++    ports:
++      - "3000:3000"
++    volumes:
++      - app-data-direct:/data
++    environment:
++      # No HA_MODE set on purpose — direct mode is determined entirely by
++      # whether at least one printer is configured on the Direct Printers
++      # page, not by an environment variable. This container never talks
++      # to Home Assistant regardless of what you configure.
++      - DIRECT_POLL_INTERVAL_MS=30000
++    restart: unless-stopped
++    networks:
++      - spoolmansync-direct
++
++volumes:
++  app-data-direct:
++
++networks:
++  spoolmansync-direct:
++    driver: bridge
+-- 
+2.43.0
+

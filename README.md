@@ -10,18 +10,23 @@ companion deployment as a git submodule:
 
 - `/` — OpenFilamentCFS, the Android app (this README).
 - `/spoolmansync` — [gibz104/SpoolmanSync](https://github.com/gibz104/SpoolmanSync)
-  (MIT), pinned to the `direct-mode` branch. A separate Next.js/Docker
-  service, not linked into or built as part of the Android app — see
-  `docs/FUNCTIONAL_DESCRIPTION.md` §11.1 for why slot dashboard/
-  consumption/low-stock tracking live there instead of in the app.
-  Vendored here for convenience so both projects travel together; clone
-  with submodules to get it:
+  (MIT), pinned to real, verified upstream `main` (tag `v1.6.5`). A
+  separate Next.js/Docker service, not linked into or built as part of
+  the Android app — see `docs/FUNCTIONAL_DESCRIPTION.md` §11.1 for why
+  slot dashboard/consumption/low-stock tracking live there instead of in
+  the app. Vendored here for convenience so both projects travel
+  together; clone with submodules to get it:
 
   ```bash
   git clone --recurse-submodules <this-repo-url>
   # or, if already cloned:
   git submodule update --init --recursive
   ```
+
+  A direct-Moonraker-mode feature (skip Home Assistant, talk straight to
+  Moonraker) exists as a patch at `docs/patches/spoolmansync-direct-mode.patch`
+  rather than as part of the pinned commit — see `docs/patches/README.md`
+  for why and how to apply it to your own fork.
 
 ## What changed from 0.1.0
 

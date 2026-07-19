@@ -11,6 +11,9 @@ baseline_note: >
 sources:
   - name: flamebarke/creality_rfid
     url: https://github.com/flamebarke/creality_rfid
+    commit: 5cf65979f519b1a69c6fc5846a4a7fe0b5334a9c (branch main, verified via
+      real `git clone` on 2026-07-19 — no LICENSE file present at that commit,
+      confirmed by listing the actual checkout, not assumed)
     license: "No explicit LICENSE file in the upstream repository as of this port. Attribution given; confirm licensing terms directly with the author before any public redistribution of nfc/CfsCodec.kt."
     use: >
       DIRECT PORT. AES_KEY_GEN and AES_KEY_CIPHER master key constants,
@@ -18,8 +21,21 @@ sources:
       layout (batch/date/supplier/material/color/length/serial/reserve),
       the material-code table (MaterialCodes.kt), and the published golden
       vector are all taken directly from this repository's crypto.py /
-      creality_rfid.py and README, ported to nfc/CfsCodec.kt and
-      data/MaterialCodes.kt.
+      creality_rfid.py (bundled inside creality_crypto.zip in that repo)
+      and README, ported to nfc/CfsCodec.kt and data/MaterialCodes.kt.
+
+      batch/supplier field resolution (2026-07-19): the actual source
+      confirms `--batch`/`--supplier` ARE real CLI arguments in the
+      upstream tool (build_tag_data(), argparse defaults at lines
+      ~599-625 of creality_rfid.py), not omitted from the CLI as an
+      earlier README-only inference had concluded — but they default to
+      the exact same '1A5'/'1B3D' as this app hardcodes, and nothing in
+      the source documents what these fields are meant to represent
+      beyond matching the 48-byte layout (no supplier registry, no
+      batch-numbering scheme, same as this project's MaterialCodes.kt
+      has for material codes but batch/supplier never got one upstream
+      either). This app's current hardcoded behaviour matches the
+      reference tool's own default, verified from source, not inferred.
     files: [app/src/main/java/com/openfilament/cfs/nfc/CfsCodec.kt, app/src/main/java/com/openfilament/cfs/data/MaterialCodes.kt, app/src/test/java/com/openfilament/cfs/CfsCodecTest.kt]
 
   - name: DnG-Crafts K2-RFID
@@ -81,8 +97,8 @@ sources:
   - name: gibz104/SpoolmanSync
     url: https://github.com/gibz104/SpoolmanSync
     license: MIT
-    commit: ddc9daa6aaefb0ae459db80bfff5e5e1f78c46ca (branch direct-mode, on top of
-      upstream ba4a84eb471a650d880c318ec7d1272888efc286)
+    commit: ba4a84eb471a650d880c318ec7d1272888efc286 (tag v1.6.5, verified
+      reachable via `git ls-remote https://github.com/gibz104/SpoolmanSync.git`)
     use: >
       NOT a code dependency of the OpenFilamentCFS Android app — vendored
       as a git submodule at /spoolmansync (as of 2026-07-19) so the
@@ -92,11 +108,24 @@ sources:
       app. Covers CFS slot dashboard, per-print consumption tracking and
       low-stock alerts, which the app deliberately does not build (see
       FUNCTIONAL_DESCRIPTION.md §11.1 and HOLD_REGISTER.md H-005/H-007).
-      The submodule is on the `direct-mode` branch, one commit ahead of
-      upstream `main` (adds direct-Moonraker mode, no Home Assistant
-      required — see spoolmansync/DIRECT_MODE.md); that commit has been
-      regression-tested (npm install/prisma generate/tsc/build/vitest,
-      65/65 tests) but never run against a real printer. The Android
-      app's only obligation toward it is writing the serial-number-as-
-      spool-ID convention into tags at tagging time (already implemented
-      in MainViewModel.writeTag).
+      The Android app's only obligation toward it is writing the serial-
+      number-as-spool-ID convention into tags at tagging time (already
+      implemented in MainViewModel.writeTag).
+
+      The submodule tracks real, verified upstream `main`, not the
+      `direct-mode` feature branch this repo was originally packaged
+      with: `git ls-remote --all` against the real GitHub repo shows no
+      `direct-mode` ref, and a direct fetch of that commit
+      (ddc9daa6aaefb0ae459db80bfff5e5e1f78c46ca) returns "not our ref" —
+      it was committed locally by a prior session but never actually
+      pushed anywhere reachable (this environment has no repo-creation
+      permission to fork it and publish that branch). Pointing the
+      submodule at it would have broken `git submodule update --init`
+      for anyone who doesn't already have that commit cached locally.
+      The direct-mode diff itself (adds direct-Moonraker mode, no Home
+      Assistant required) is preserved as a patch at
+      docs/patches/spoolmansync-direct-mode.patch — regression-tested in
+      this delivery environment (npm install/prisma generate/tsc/build/
+      vitest, 65/65 tests) but never run against a real printer. Apply
+      it to a real fork once repo-creation/push access is available;
+      see docs/patches/README.md.
