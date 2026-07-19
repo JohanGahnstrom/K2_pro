@@ -286,7 +286,14 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     Screen {
         Header("Thin client", "Printer status", "Basic status and the native auto-refill toggle live here. Slot view, consumption and low-stock alerts are better handled by SpoolmanSync — see below.")
         OutlinedTextField(value = state.printerUrl, onValueChange = vm::setPrinterUrl, modifier = Modifier.fillMaxWidth(), label = { Text("Moonraker base URL") }, leadingIcon = { Icon(Icons.Default.Router, null) }, singleLine = true)
-        Button(onClick = vm::probePrinter, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Default.WifiFind, null); Spacer(Modifier.width(8.dp)); Text("Probe printer") }
+        Button(onClick = vm::probePrinter, enabled = !state.isProbingPrinter, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+            if (state.isProbingPrinter) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+            } else {
+                Icon(Icons.Default.WifiFind, null)
+            }
+            Spacer(Modifier.width(8.dp)); Text(if (state.isProbingPrinter) "Connecting…" else "Probe printer")
+        }
         Card(shape = RoundedCornerShape(28.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(12.dp).clip(CircleShape).background(if (state.printer.online) Color(0xFF36D67C) else Color(0xFFFF6B68))); Spacer(Modifier.width(10.dp)); Text(state.printer.state, fontWeight = FontWeight.Black, fontSize = 20.sp) }

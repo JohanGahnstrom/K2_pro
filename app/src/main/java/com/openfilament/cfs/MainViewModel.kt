@@ -25,6 +25,7 @@ data class AppState(
     val selectedColor: FilamentColor = Catalogue.products.first().colors.first(),
     val weightG: Int = 1000,
     val printer: PrinterSnapshot = PrinterSnapshot(),
+    val isProbingPrinter: Boolean = false,
     val printerUrl: String = "http://192.168.1.100:7125",
     val spoolmanSyncUrl: String = "",
     val deviceAssessment: DeviceCompatibility.Assessment =
@@ -201,11 +202,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (outcome is WriteOutcome.Success) settingsStore.setSpools(newSpools)
     }
 
-    fun probePrinter() = viewModelScope.launch {
-        _state.value = _state.value.copy(message = "Connecting to printer…")
-        moonraker.probe(_state.value.printerUrl)
-            .onSuccess { _state.value = _state.value.copy(printer = it, message = "Printer connected") }
-            .onFailure { _state.value = _state.value.copy(printer = PrinterSnapshot(), message = it.message ?: "Connection failed") }
+    fun probePrinter() {
+        if (_state.value.isProbingPrinter) return // already in flight — ignore a repeat tap rather than stacking concurrent probes
+        viewModelScope.launch {
+            _state.value = _state.value.copy(isProbingPrinter = true, message = "Connecting to printer…")
+            moonraker.probe(_state.value.printerUrl)
+                .onSuccess { _state.value = _state.value.copy(printer = it, message = "Printer connected") }
+                .onFailure { _state.value = _state.value.copy(printer = PrinterSnapshot(), message = it.message ?: "Connection failed") }
+            _state.value = _state.value.copy(isProbingPrinter = false)
+        }
     }
 
     /** Toggles the CFS's own native auto-refill feature — no matching logic lives in this app (§12). */
