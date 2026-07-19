@@ -1,8 +1,30 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Release signing: never committed. Reads from a git-ignored local.properties
+// (RELEASE_STORE_FILE/RELEASE_STORE_PASSWORD/RELEASE_KEY_ALIAS/RELEASE_KEY_PASSWORD)
+// if present, falling back to identically-named environment variables (for a real
+// CI/CD signing pipeline later). If none of these are set — the case for this
+// repo's own CI and for anyone who hasn't dropped in a real keystore yet — release
+// builds stay unsigned, exactly as they were before this file existed, so nothing
+// about the existing green `bundleRelease` CI step changes.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+fun releaseSigningProp(key: String): String? = localProps.getProperty(key) ?: System.getenv(key)
+val releaseStoreFile = releaseSigningProp("RELEASE_STORE_FILE")
+val releaseStorePassword = releaseSigningProp("RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseSigningProp("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseSigningProp("RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = !releaseStoreFile.isNullOrBlank() && !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyAlias.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank()
 
 android {
     namespace = "com.openfilament.cfs"
@@ -18,10 +40,24 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

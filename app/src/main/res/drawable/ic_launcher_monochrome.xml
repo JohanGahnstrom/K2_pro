@@ -1,0 +1,11 @@
+<!--
+  Simplified to just the ring (the same nonzero-winding donut trick as the
+  colour foreground's ring path) rather than reproducing the lens/antenna
+  detail — the system re-tints and re-masks this layer for Android 13+
+  themed icons, so a clean, recognisable silhouette is safer than a
+  precise hand-computed path-boolean merge that can't be visually
+  verified in this environment.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <path android:fillColor="#FF000000" android:pathData="M54,16a38,38 0,1 0,0 76a38,38 0,1 0,0 -76M54,28a26,26 0,1 1,0 52a26,26 0,1 1,0 -52"/>
+</vector>

@@ -176,7 +176,8 @@ gate described in `docs/FUNCTIONAL_DESCRIPTION.md` §8.4.
 | [`docs/HOLD_REGISTER.md`](docs/HOLD_REGISTER.md) | Every open item blocking a real release, with what's needed to close each one |
 | [`docs/SOURCE_REGISTER.md`](docs/SOURCE_REGISTER.md) | Every external source consulted, what was verified from it, and how |
 | [`docs/BUILD_STATUS.md`](docs/BUILD_STATUS.md) | Real CI run history, including every failure this project has hit and how it was fixed |
-| [`docs/PLAY_STORE_CHECKLIST.md`](docs/PLAY_STORE_CHECKLIST.md) | What's left before any public store submission |
+| [`docs/PLAY_STORE_CHECKLIST.md`](docs/PLAY_STORE_CHECKLIST.md) | Step-by-step Play Store readiness guide — what's done, what's blocking, what's left, in order |
+| [`docs/play_store/`](docs/play_store/) | Draft privacy policy, Data Safety form answers, store listing copy, and rendered store graphics |
 | [`THIRD_PARTY.yml`](THIRD_PARTY.yml) | Per-file attribution for every piece of ported or referenced third-party work |
 
 ## License
