@@ -1,5 +1,6 @@
 package com.openfilament.cfs.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -104,6 +105,10 @@ private val reuseSteps = listOf(
 fun GuideFlow(onExit: () -> Unit, startAt: GuideTopic? = null) {
     var selected by rememberSaveable { mutableStateOf(startAt) }
     val topic = selected
+    // Without this, system back from inside the guide flow would exit the
+    // whole app rather than stepping back through it — there's no
+    // Navigation-Compose back stack backing this screen, just local state.
+    BackHandler { if (topic != null) selected = null else onExit() }
     if (topic == null) {
         GuideHubScreen(onBack = onExit, onSelect = { selected = it })
     } else {
@@ -183,7 +188,7 @@ private fun GuideStepCard(number: Int, step: GuideStep) = Card(shape = RoundedCo
 @Composable
 private fun GuideBackRow(title: String, onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         Spacer(Modifier.width(4.dp))
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
     }

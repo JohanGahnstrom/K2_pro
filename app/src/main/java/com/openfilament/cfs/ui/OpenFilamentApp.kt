@@ -1,6 +1,7 @@
 package com.openfilament.cfs.ui
 
 import android.graphics.Color as AndroidColor
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -52,6 +53,13 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
         return
     }
 
+    // Bottom-nav tabs have no back stack of their own (just local state), so
+    // without this, pressing system back from any non-Home tab exits the
+    // whole app instead of returning to Home — surprising on a 5-tab root
+    // screen. One back press goes to Home; a second exits, matching the
+    // usual Android bottom-navigation convention.
+    BackHandler(enabled = tab != Tab.HOME) { tab = Tab.HOME }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -72,6 +80,14 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
             }
         }
         state.message?.let { message ->
+            // This Snackbar is always-composed (not a SnackbarHostState-driven
+            // one), so nothing auto-clears it without this — it would
+            // otherwise sit on screen indefinitely until manually dismissed,
+            // even for transient status text like "Connecting to printer…".
+            LaunchedEffect(message) {
+                kotlinx.coroutines.delay(4000)
+                viewModel.clearMessage()
+            }
             Snackbar(modifier = Modifier.padding(padding).padding(16.dp), action = { TextButton(onClick = viewModel::clearMessage) { Text("Dismiss") } }) { Text(message) }
         }
     }
@@ -202,7 +218,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
 }
 
 @Composable private fun ColorChoice(color: FilamentColor, selected: Boolean, select: () -> Unit) {
-    val parsed = remember(color.hex) { Color(AndroidColor.parseColor(color.hex)) }
+    val parsed = remember(color.hex) { runCatching { Color(AndroidColor.parseColor(color.hex)) }.getOrDefault(Color.Gray) }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(74.dp).clickable(onClick = select)) {
         Box(Modifier.size(if (selected) 58.dp else 50.dp).clip(CircleShape).background(parsed))
         Spacer(Modifier.height(7.dp)); Text(color.name, maxLines = 2, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
@@ -210,7 +226,8 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
 }
 
 @Composable private fun SpoolPreview(state: AppState) {
-    val color by animateColorAsState(Color(AndroidColor.parseColor(state.selectedColor.hex)), label = "spool")
+    val target = remember(state.selectedColor.hex) { runCatching { Color(AndroidColor.parseColor(state.selectedColor.hex)) }.getOrDefault(Color.Gray) }
+    val color by animateColorAsState(target, label = "spool")
     Card(shape = RoundedCornerShape(28.dp)) {
         Row(Modifier.fillMaxWidth().padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(92.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) { Box(Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface)) }
