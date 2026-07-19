@@ -97,11 +97,28 @@ delivery environment's pushes:
    successful end-to-end build of this project — real Android Gradle
    Plugin, real compileSdk 36 platform, real AndroidX/Compose
    dependencies, on GitHub's own infrastructure, unmodified by anything
-   specific to this delivery environment. Subsequent commits (the
-   AutoMirrored icon cleanup, the serial-stability fix, and the local
-   spool history feature) each triggered their own run — see the
-   Actions tab for their current results; update this section if any
-   of them regress.
+   specific to this delivery environment.
+6. **Run 12 (commit `11437ac`, the spool-persistence commit): FAILED.**
+   All 5 new `SpoolPersistenceTest` cases threw `RuntimeException`.
+   Root cause: `android.jar`'s `org.json.JSONObject`/`JSONArray` are
+   non-functional stubs under plain JVM unit tests (real behavior only
+   exists on-device or via Robolectric) — no prior test had actually
+   constructed one at runtime, so this had never surfaced. This commit
+   was fast-forward-merged to `main` before the failure was caught
+   (`main` briefly sat on a red build).
+7. Fixed by adding `testImplementation("org.json:json:20231013")` to
+   `app/build.gradle.kts` (commit `e962cd2`) — a real, functional
+   org.json jar on the unit-test classpath takes precedence over
+   `android.jar`'s stub. **Run 15 (commit `e962cd2`): GREEN**, on the
+   feature branch. `main` was then fast-forwarded from `11437ac` to
+   `e962cd2` (bringing in both this fix and the earlier submodule/
+   batch-supplier commit `e0611de`), restoring `main` to a build that
+   is confirmed green rather than blindly re-merging. `main`'s own
+   resulting CI run (run 16, same commit/tree as run 15) is expected to
+   pass for the same reason — see the Actions tab to confirm.
+
+`main` and the feature branch (`claude/openfilamentcfs-spoolmansync-setup-7pl0eb`)
+are now in sync at `e962cd2`.
 
 This is a materially stronger verification signal than the standalone
 JVM harness below: it's the real Android Gradle Plugin, the real
