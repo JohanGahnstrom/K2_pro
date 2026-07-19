@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -25,7 +27,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -285,8 +290,8 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     Screen {
         Header("Thin client", "Printer status", "Basic status and the native auto-refill toggle live here. Slot view, consumption and low-stock alerts are better handled by SpoolmanSync — see below.")
-        OutlinedTextField(value = state.printerUrl, onValueChange = vm::setPrinterUrl, modifier = Modifier.fillMaxWidth(), label = { Text("Moonraker base URL") }, leadingIcon = { Icon(Icons.Default.Router, null) }, singleLine = true)
-        Button(onClick = vm::probePrinter, enabled = !state.isProbingPrinter, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+        OutlinedTextField(value = state.printerUrl, onValueChange = vm::setPrinterUrl, modifier = Modifier.fillMaxWidth(), label = { Text("Moonraker base URL") }, leadingIcon = { Icon(Icons.Default.Router, null) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done))
+        Button(onClick = vm::probePrinter, enabled = !state.isProbingPrinter && state.printerUrl.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp)) {
             if (state.isProbingPrinter) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
             } else {
@@ -308,9 +313,15 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
             }
         }
         Card(shape = RoundedCornerShape(24.dp)) {
-            Row(Modifier.padding(18.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                Modifier
+                    .toggleable(value = state.printer.autoRefillEnabled, role = Role.Switch, onValueChange = vm::setAutoRefill)
+                    .padding(18.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Column(Modifier.weight(1f)) { Text("Native auto-refill", fontWeight = FontWeight.Black); Text("Toggles the CFS's own same-material/colour relay. No matching logic runs in this app.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
-                Switch(checked = state.printer.autoRefillEnabled, onCheckedChange = vm::setAutoRefill)
+                Switch(checked = state.printer.autoRefillEnabled, onCheckedChange = null)
             }
         }
 
@@ -318,7 +329,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
         Card(shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("This app deliberately does not build a slot dashboard, consumption tracker or low-stock UI — SpoolmanSync already does this against real K1/K2/K2 Plus/Hi/Ender-3-V3-CFS hardware, is open source, and deploys in one command.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = state.spoolmanSyncUrl, onValueChange = vm::setSpoolmanSyncUrl, modifier = Modifier.fillMaxWidth(), label = { Text("SpoolmanSync URL") }, placeholder = { Text("http://192.168.1.100:3000") }, leadingIcon = { Icon(Icons.Default.Link, null) }, singleLine = true)
+                OutlinedTextField(value = state.spoolmanSyncUrl, onValueChange = vm::setSpoolmanSyncUrl, modifier = Modifier.fillMaxWidth(), label = { Text("SpoolmanSync URL") }, placeholder = { Text("http://192.168.1.100:3000") }, leadingIcon = { Icon(Icons.Default.Link, null) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done))
                 Button(onClick = { runCatching { uriHandler.openUri(state.spoolmanSyncUrl) } }, enabled = state.spoolmanSyncUrl.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) { Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Open SpoolmanSync") }
             }
         }
