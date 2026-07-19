@@ -61,6 +61,11 @@ for the full reasoning.
   `M8200` load/unload (never `BOX_LOAD_MATERIAL`), `M141` chamber command
 - Real material-code registry (41 verified Creality codes) replacing
   placeholder IDs in the catalogue
+- In-app guide screens (`ui/GuideScreens.kt`, reachable from Home and from
+  the Tag screen) covering scanning/writing a tag, physically applying a
+  tag to a spool, and safely reusing or moving one — see
+  `docs/SOURCE_REGISTER.md` "Physical tag application and reuse" for the
+  community sources behind them
 - Polished Jetpack Compose/Material 3 UI, Simple/Expert mode, edge-to-edge,
   dynamic colour
 - Unit tests (codec golden vector + filament math) and GitHub Actions workflow

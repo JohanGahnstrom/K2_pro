@@ -44,6 +44,13 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var showExpertDialog by remember { mutableStateOf(false) }
+    var guideTopic by rememberSaveable { mutableStateOf<GuideTopic?>(null) }
+    var showGuideHub by rememberSaveable { mutableStateOf(false) }
+
+    if (showGuideHub || guideTopic != null) {
+        GuideFlow(onExit = { showGuideHub = false; guideTopic = null }, startAt = guideTopic)
+        return
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -57,8 +64,8 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     ) { padding ->
         AnimatedContent(tab, label = "tab") { selected ->
             when (selected) {
-                Tab.HOME -> HomeScreen(state, { tab = Tab.TAG }, { tab = Tab.PRINTER })
-                Tab.TAG -> TagScreen(state, viewModel)
+                Tab.HOME -> HomeScreen(state, { tab = Tab.TAG }, { tab = Tab.PRINTER }, { showGuideHub = true })
+                Tab.TAG -> TagScreen(state, viewModel, { guideTopic = GuideTopic.SCAN_WRITE })
                 Tab.SPOOLS -> SpoolsScreen(state)
                 Tab.PRINTER -> PrinterScreen(state, viewModel)
                 Tab.SETTINGS -> SettingsScreen(state, onSimple = { viewModel.setMode(UserMode.SIMPLE) }, onExpert = { showExpertDialog = true })
@@ -107,7 +114,7 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
     }
 }
 
-@Composable private fun HomeScreen(state: AppState, tag: () -> Unit, printer: () -> Unit) = Screen {
+@Composable private fun HomeScreen(state: AppState, tag: () -> Unit, printer: () -> Unit, guide: () -> Unit) = Screen {
     Header(if (state.mode == UserMode.SIMPLE) "Simple mode" else "Expert mode", "Filament, finally effortless.", "Identify, tag and manage third-party filament without touching raw RFID data.")
     DeviceCompatBanner(state.deviceAssessment)
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))).padding(24.dp)) {
@@ -125,10 +132,12 @@ fun OpenFilamentApp(viewModel: MainViewModel) {
         MetricCard(if (state.printer.online) "Online" else "Offline", "printer", Icons.Default.Print, Modifier.weight(1f))
     }
     ActionCard(Icons.Default.Link, "Connect your K2", "View CFS slots, toggle native auto-refill and monitor temperatures.", printer)
+    ActionCard(Icons.AutoMirrored.Filled.HelpOutline, "Guides", "Step-by-step: scanning & writing tags, applying a tag to a spool, and reusing or moving one safely.", guide)
 }
 
-@Composable private fun TagScreen(state: AppState, vm: MainViewModel) = Screen {
+@Composable private fun TagScreen(state: AppState, vm: MainViewModel, guide: () -> Unit) = Screen {
     Header("Guided workflow", "Tag a spool", if (state.mode == UserMode.SIMPLE) "Three choices. No protocol fields." else "Full mapping visibility with the real, verified CFS codec.")
+    TextButton(onClick = guide) { Icon(Icons.AutoMirrored.Filled.HelpOutline, null); Spacer(Modifier.width(6.dp)); Text("How do I actually do this?") }
     SectionTitle("1 · Filament")
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items(vm.products) { product -> ProductChip(product, state.selectedProduct.id == product.id) { vm.selectProduct(product) } }

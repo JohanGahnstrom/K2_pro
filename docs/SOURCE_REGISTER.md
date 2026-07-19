@@ -87,6 +87,65 @@ this properly:
 See `THIRD_PARTY.yml`'s `flamebarke/creality_rfid` entry for the
 authoritative record.
 
+## Physical tag application and reuse (2026-07-19)
+
+Researched to write `ui/GuideScreens.kt`'s in-app guide screens (Scan &
+write / Apply a tag to a spool / Reuse or move a tag), not just docs — the
+app now has real UI screens for this, reachable from Home ("Guides") and
+from the Tag screen ("How do I actually do this?"). `git clone` against
+`https://github.com/...` worked as established earlier in this session;
+direct `WebFetch` of non-GitHub hosts (`help.simplyprint.io`,
+`forum.creality.com`, `wiki.creality.com`, a WordPress blog) consistently
+returned HTTP 403 in this environment — findings below come from `WebSearch`
+result snippets instead, which did reach those pages' content.
+
+- **Tag format confirmed**: MIFARE Classic 1K, commonly sold pre-mounted as
+  25 mm round adhesive stickers. NTAG213/215/216 and MIFARE Ultralight
+  stickers are explicitly documented as incompatible despite looking like
+  the same generic "NFC sticker" product — worth a specific warning, not
+  just "buy an NFC tag."
+- **Two tags per spool**: community sources (Creality Community Forum
+  threads, SimplyPrint's help article) describe more reliable reads with
+  one tag on each face of the spool, since the CFS has independent reader
+  hardware per lane side.
+- **Placement/alignment**: derived from third-party printable tag-holder
+  listings (Printables/Creality Cloud, found via WebSearch, not individually
+  cloned) — centre the tag's semi-circular cutout on the spool centre,
+  between the spool's two large structural holes; orient the tag's
+  thin/wide tab per which CFS lane side it faces, since the two lanes mirror
+  each other.
+- **Tags are rewritable in place — community-confirmed, not inferred**: a
+  Creality Community Forum thread ("Creality RFID tags are rewritable",
+  forum.creality.com/t/creality-rfid-tags-are-rewritable/32523) documents a
+  user rewinding filament onto a different physical spool, then rewriting
+  the *same* tag's material/colour/weight repeatedly, confirmed working by
+  multiple repliers. This is the basis for the guide's "keeping the same
+  spool → rewrite, don't peel" recommendation.
+- **Peeling and reapplying a tag to a *different* spool is NOT confirmed to
+  work by any source checked** — this is a real finding, not an absence of
+  research. No community source (the forum threads above, DnG-Crafts/K2-RFID,
+  flamebarke/creality_rfid, MakaiView/cfs-programmer — all directly cloned
+  and grepped for "peel"/"adhesive"/"reuse"/"transfer" with no hits) and no
+  general RFID-industry source describes anyone successfully peeling a
+  stuck-down CFS tag off one spool and re-adhering it to another. General
+  RFID/NFC sticker documentation (nfckill.com "Anatomy of an RFID tag",
+  engineerfix.com "How to Remove an RFID Sticker Without Damaging",
+  corerfid.com "Best practice when fixing RFID tags") independently
+  describes adhesive RFID stickers commonly using a fine antenna coil that
+  fractures when peeled, including tags deliberately designed to break on
+  removal (anti-tamper access-control tags) — not proof the CFS tag behaves
+  identically, since it isn't necessarily an anti-tamper design, but reason
+  enough to treat peel-and-reuse as an unverified risk rather than a safe
+  default in the in-app guide. The guide instead recommends: rewrite in
+  place if keeping the same spool, or buy a fresh tag / use a printable
+  holder if retiring one.
+- `sybethiesant/CFSWriter` (the "preferred fork target" per the Community
+  CFS/RFID projects section above) could not be cloned in this environment —
+  `git clone`/`git ls-remote` against it returned a credential prompt rather
+  than repository data, unlike every other repo cloned this session. Not
+  used as a source for this section; flagging in case it's actually
+  private/renamed/deleted rather than a transient proxy issue.
+
 ## Printer-side automation and integration (new section)
 
 - **3dg1luk43/ha_creality_ws (new — Home Assistant WebSocket integration; K2/K2 Pro camera via go2rtc, box temp control, power; open feature-request issue for CFS status, #50):** https://github.com/3dg1luk43/ha_creality_ws , README: https://github.com/3dg1luk43/ha_creality_ws/blob/main/README.md , issue: https://github.com/3dg1luk43/ha_creality_ws/issues/50
